@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { ReactNode } from 'react';
@@ -14,14 +15,15 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Helper function to manage cookies (simplified)
-const setCookie = (name: string, value: string, days: number) => {
+// Helper function to manage cookies
+const setCookie = (name: string, value: string, days?: number) => {
   let expires = "";
   if (days) {
     const date = new Date();
     date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
     expires = "; expires=" + date.toUTCString();
   }
+  // If 'days' is not provided or is 0, 'expires' remains empty, creating a session cookie
   if (typeof document !== 'undefined') {
     document.cookie = name + "=" + (value || "") + expires + "; path=/";
   }
@@ -65,7 +67,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await new Promise(resolve => setTimeout(resolve, 500));
     if (id === LOGIN_ID && pass === LOGIN_PASS) {
       setIsAuthenticated(true);
-      setCookie(AUTH_TOKEN_COOKIE_NAME, 'true', 7); // Store a simple token
+      // Set as a session cookie (no 'days' argument or days = 0)
+      // This cookie will be deleted when the browser is closed.
+      setCookie(AUTH_TOKEN_COOKIE_NAME, 'true'); 
       router.push('/dashboard');
       setIsLoading(false);
       return true;
@@ -87,3 +91,4 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     </AuthContext.Provider>
   );
 };
+

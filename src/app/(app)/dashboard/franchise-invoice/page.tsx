@@ -2,61 +2,50 @@
 // @ts-nocheck
 'use client';
 
-import type { Product, OrderItem, Order, PaymentMethod } from '@/types';
+import type { GodownProduct, OrderItem, Order, PaymentMethod } from '@/types';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Search, ScanLine, PlusCircle, Trash2, Printer, CheckCircle, ShoppingCart, Loader2, Banknote, CreditCard } from 'lucide-react';
+import { Search, Trash2, Printer, CheckCircle, ShoppingCart, Loader2, Building, Banknote, CreditCard } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { SHOP_NAME, CONTACT_NUMBERS, SHOP_ADDRESS, SHOP_GSTIN, SHOP_STATE } from '@/lib/constants';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogFooter } from '@/components/ui/dialog';
+import { FRANCHISE_SHOP_NAME, FRANCHISE_CONTACT_NUMBERS, FRANCHISE_ADDRESS, FRANCHISE_GSTIN, FRANCHISE_STATE } from '@/lib/constants';
 import { BarcodeDisplay } from '@/components/inventory/BarcodeDisplay';
 import { format } from 'date-fns';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import * as dataStore from '@/lib/data-store';
 
-const fetchProductsForBilling = async (searchTerm: string = ''): Promise<Product[]> => {
+const fetchGodownProductsForFranchiseBilling = async (searchTerm: string = ''): Promise<GodownProduct[]> => {
   let filters: any = { orderBy: 'name', orderDirection: 'asc', limit: 10 };
   if (searchTerm) {
     filters.name = searchTerm; 
   }
-  const products = await dataStore.getProducts(filters);
+  const products = await dataStore.getGodownProducts(filters);
   return products;
 };
 
-const fetchProductByBarcode = async (barcode: string): Promise<Product | null> => {
-  const product = await dataStore.getProductByUniqueId(barcode);
-  return product || null;
-};
-
-export default function BillingPage() {
+export default function FranchiseInvoicePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
 
   const [currentOrderItems, setCurrentOrderItems] = useState<OrderItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [barcodeSearchTerm, setBarcodeSearchTerm] = useState('');
+  const [city, setCity] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [showSearchResults, setShowSearchResults] = useState(false);
   const searchInputRef = useRef<HTMLDivElement>(null);
-  const barcodeInputRef = useRef<HTMLInputElement>(null);
-  const [latestOrder, setLatestOrder] = useState<Order | null>(null);
+  const [latestFranchiseOrder, setLatestFranchiseOrder] = useState<Order | null>(null);
   const printRef = useRef<HTMLDivElement>(null); 
   const billWrapperRef = useRef<HTMLDivElement>(null); 
 
-  const { data: searchResults = [] } = useQuery<Product[]>({
-    queryKey: ['billingProducts', searchTerm],
-    queryFn: () => fetchProductsForBilling(searchTerm),
+  const { data: searchResults = [] } = useQuery<GodownProduct[]>({
+    queryKey: ['franchiseBillingGodownProducts', searchTerm],
+    queryFn: () => fetchGodownProductsForFranchiseBilling(searchTerm),
     enabled: searchTerm.length > 0 && showSearchResults,
   });
 
@@ -71,7 +60,7 @@ export default function BillingPage() {
   }, []);
   
   const handleDirectPrint = useCallback(() => {
-    if (printRef.current && latestOrder && billWrapperRef.current) {
+    if (printRef.current && latestFranchiseOrder && billWrapperRef.current) {
       const wrapper = billWrapperRef.current;
       const bodyEl = document.body;
 
@@ -86,22 +75,22 @@ export default function BillingPage() {
         wrapper.classList.add('hidden');
         bodyEl.classList.remove('body-is-printing');
 
-        toast({ title: "Printed", description: `Bill for order ${latestOrder.orderNumber} has been processed for printing.` });
-        setLatestOrder(null); 
+        toast({ title: "Printed", description: `Invoice ${latestFranchiseOrder.orderNumber} has been processed for printing.` });
+        setLatestFranchiseOrder(null); 
       }, 250); 
     }
-  }, [toast, latestOrder, setLatestOrder]);
+  }, [toast, latestFranchiseOrder, setLatestFranchiseOrder]);
 
 
-  const addProductToOrder = useCallback(async (product: Product, quantity: number = 1) => {
-    const freshProduct = await dataStore.getProductById(product.id);
+  const addProductToOrder = useCallback(async (product: GodownProduct, quantity: number = 1) => {
+    const freshProduct = await dataStore.getGodownProductById(product.id);
     if (!freshProduct) {
-        toast({ title: 'Product Not Found', description: `${product.name} could not be fetched.`, variant: 'destructive' });
+        toast({ title: 'Product Not Found', description: `${product.name} could not be fetched from godown.`, variant: 'destructive' });
         return;
     }
 
     if (freshProduct.quantity < quantity) {
-      toast({ title: 'Out of Stock', description: `Not enough ${freshProduct.name} in stock. Available: ${freshProduct.quantity}`, variant: 'destructive' });
+      toast({ title: 'Out of Stock', description: `Not enough ${freshProduct.name} in godown. Available: ${freshProduct.quantity}`, variant: 'destructive' });
       return;
     }
 
@@ -109,7 +98,7 @@ export default function BillingPage() {
       const existingItem = prevItems.find(item => item.productId === freshProduct.id);
       if (existingItem) {
         if (freshProduct.quantity < existingItem.quantity + quantity) {
-          toast({ title: 'Stock Limit', description: `Cannot add more ${freshProduct.name}. Available: ${freshProduct.quantity}`, variant: 'destructive' });
+          toast({ title: 'Stock Limit', description: `Cannot add more ${freshProduct.name}. Available in godown: ${freshProduct.quantity}`, variant: 'destructive' });
           return prevItems;
         }
         return prevItems.map(item =>
@@ -126,48 +115,15 @@ export default function BillingPage() {
   }, [toast]);
 
 
-  useEffect(() => {
-    const scannedBarcode = searchParams.get('scannedBarcode');
-    if (scannedBarcode) {
-      const processScannedBarcode = async () => {
-        const product = await fetchProductByBarcode(scannedBarcode.trim());
-        if (product) {
-          addProductToOrder(product, 1);
-          toast({ title: "Product Added", description: `${product.name} added via scanner.` });
-        } else {
-          toast({ title: "Not Found", description: `Product with barcode ${scannedBarcode} not found.`, variant: "destructive" });
-        }
-        const newSearchParams = new URLSearchParams(searchParams.toString());
-        newSearchParams.delete('scannedBarcode');
-        router.replace(`${pathname}?${newSearchParams.toString()}`, { scroll: false });
-      };
-      processScannedBarcode();
-    }
-  }, [searchParams, addProductToOrder, toast, router, pathname]);
-
-
-  const handleManualBarcodeScan = async () => {
-    if (!barcodeSearchTerm.trim()) return;
-    const product = await fetchProductByBarcode(barcodeSearchTerm.trim());
-    if (product) {
-      addProductToOrder(product);
-      setBarcodeSearchTerm(''); 
-      toast({ title: "Product Added", description: `${product.name} added to bill via manual barcode entry.` });
-    } else {
-      toast({ title: "Not Found", description: `Product with barcode ${barcodeSearchTerm} not found.`, variant: "destructive" });
-    }
-    barcodeInputRef.current?.focus();
-  };
-
   const updateOrderItemQuantity = async (productId: string, newQuantity: number) => {
-    const productInStore = await dataStore.getProductById(productId);
-    if (!productInStore) {
-        toast({ title: 'Product Error', description: 'Could not verify stock for item.', variant: 'destructive'});
+    const productInGodown = await dataStore.getGodownProductById(productId);
+    if (!productInGodown) {
+        toast({ title: 'Product Error', description: 'Could not verify godown stock for item.', variant: 'destructive'});
         return;
     }
 
-    if (newQuantity > productInStore.quantity) {
-        toast({ title: 'Stock Limit', description: `Cannot set quantity for ${productInStore.name} to ${newQuantity}. Available: ${productInStore.quantity}`, variant: 'destructive' });
+    if (newQuantity > productInGodown.quantity) {
+        toast({ title: 'Stock Limit', description: `Cannot set quantity for ${productInGodown.name} to ${newQuantity}. Available in godown: ${productInGodown.quantity}`, variant: 'destructive' });
         return; 
     }
 
@@ -191,69 +147,79 @@ export default function BillingPage() {
   const finalizeOrderMutation = useMutation({
     mutationFn: async () => {
       if (currentOrderItems.length === 0) {
-        toast({ title: 'Empty Bill', description: 'Add items to the bill before finalizing.', variant: 'destructive' });
-        throw new Error("Empty bill");
+        toast({ title: 'Empty Invoice', description: 'Add items to the invoice before finalizing.', variant: 'destructive' });
+        throw new Error("Empty invoice");
+      }
+      if (!city.trim()) {
+        toast({ title: 'City Required', description: 'Please enter the city name for the franchise invoice.', variant: 'destructive' });
+        throw new Error("City name required");
       }
       if (!paymentMethod) {
-        toast({ title: 'Payment Method Required', description: 'Please select a payment method.', variant: 'destructive'});
+        toast({ title: 'Payment Method Required', description: 'Please select a payment method.', variant: 'destructive' });
         throw new Error("Payment method required");
       }
 
-      const orderNumber = await dataStore.generateNextOrderNumber('standard');
+      const orderNumber = await dataStore.generateNextOrderNumber('franchise');
       const newOrderData: Omit<Order, 'id'> = { 
         orderNumber,
         items: currentOrderItems,
         totalAmount,
-        createdAt: new Date(),
-        type: 'standard', 
+        createdAt: new Date(), 
+        type: 'franchise', // Crucial: set type to 'franchise'
+        city: city.trim(),
         paymentMethod: paymentMethod,
       };
       
+      // Update Godown Product Quantities
       for (const item of currentOrderItems) {
-        const product = await dataStore.getProductById(item.productId); 
-        if (!product) {
+        const godownProduct = await dataStore.getGodownProductById(item.productId); 
+        if (!godownProduct) {
           toast({
             title: 'Product Not Found During Finalization',
-            description: `Product ${item.name} (ID: ${item.productId}) could not be found. Order cannot be finalized.`,
+            description: `Godown product ${item.name} (ID: ${item.productId}) could not be found. Invoice cannot be finalized.`,
             variant: 'destructive'
           });
-          throw new Error(`Product ${item.name} not found during finalization.`);
+          throw new Error(`Godown product ${item.name} not found during finalization.`);
         }
-        if (product.quantity < item.quantity) {
+        if (godownProduct.quantity < item.quantity) {
           toast({
             title: 'Insufficient Stock During Finalization',
-            description: `Not enough ${item.name} in stock. Available: ${product.quantity}, Ordered: ${item.quantity}. Order cannot be finalized.`,
+            description: `Not enough ${item.name} in godown. Available: ${godownProduct.quantity}, Ordered: ${item.quantity}. Invoice cannot be finalized.`,
             variant: 'destructive'
           });
-          throw new Error(`Insufficient stock for ${item.name} during finalization. Available: ${product.quantity}, Ordered: ${item.quantity}`);
+          throw new Error(`Insufficient stock for ${item.name} in godown. Available: ${godownProduct.quantity}, Ordered: ${item.quantity}`);
         }
-        await dataStore.updateProduct(item.productId, { quantity: product.quantity - item.quantity });
+        await dataStore.updateGodownProduct(item.productId, { quantity: godownProduct.quantity - item.quantity });
       }
       
+      // Add order to the 'franchiseInvoices' collection (handled by addOrder based on type)
       const createdOrder = await dataStore.addOrder(newOrderData); 
       return createdOrder; 
     },
     onSuccess: (createdOrder) => {
-      queryClient.invalidateQueries({ queryKey: ['products'] }); 
-      queryClient.invalidateQueries({ queryKey: ['billingProducts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboardData'] }); 
-      queryClient.invalidateQueries({ queryKey: ['lowStockProducts'] });
-      queryClient.invalidateQueries({ queryKey: ['orders']});
-      queryClient.invalidateQueries({ queryKey: ['standardOrders']});
-      toast({ title: 'Order Placed!', description: `Order ${createdOrder.orderNumber} finalized. Total: ₹${createdOrder.totalAmount.toFixed(2)}`, className: "bg-primary text-primary-foreground" });
+      queryClient.invalidateQueries({ queryKey: ['godownProducts'] }); 
+      queryClient.invalidateQueries({ queryKey: ['franchiseBillingGodownProducts'] });
+      queryClient.invalidateQueries({ queryKey: ['franchiseInvoices'] }); // Specific key for franchise invoices
+      queryClient.invalidateQueries({ queryKey: ['dashboardData'] });
+      toast({ title: 'Franchise Invoice Placed!', description: `Invoice ${createdOrder.orderNumber} finalized for ${createdOrder.city}. Total: ₹${createdOrder.totalAmount.toFixed(2)}`, className: "bg-primary text-primary-foreground" });
       setCurrentOrderItems([]);
+      setCity('');
       setPaymentMethod('cash'); // Reset payment method
-      setLatestOrder(createdOrder); 
+      setLatestFranchiseOrder(createdOrder); 
     },
     onError: (error: Error) => {
-      const title = 'Order Failed';
-      let description = `Error finalizing order: ${error.message}`;
+      const title = 'Invoice Failed';
+      let description = `Error finalizing invoice: ${error.message}`;
 
       const isIndexError = error.message.toLowerCase().includes('query requires an index') || error.message.toLowerCase().includes('index required');
 
       if (isIndexError) {
         const fullLinkRegex = /https:\/\/console\.firebase\.google\.com\/project\/[^/]+\/database\/firestore\/indexes\?create_composite=[^)\s]+/;
         let createIndexLink = error.message.match(fullLinkRegex)?.[0] || null;
+        
+        const collectionNameMatch = error.message.match(/collection:\s*(\w+)/i);
+        const collectionName = collectionNameMatch ? collectionNameMatch[1] : 'your collection';
+
 
         if (!createIndexLink) {
           const compositeParamRegex = /create_composite=([^)\s]+)/;
@@ -266,45 +232,67 @@ export default function BillingPage() {
           }
         }
         
-        description = "A database operation failed because a required Firestore index is missing. ";
+        description = `A database operation failed because a required Firestore index is missing for the '${collectionName}' collection. `;
         if (createIndexLink) {
           description += `Please use this link to create it: ${createIndexLink}. `;
         } else {
-          description += "Please go to your Firebase console (Firestore > Indexes section). ";
-          description += "You most likely need to create a composite index for the 'orders' collection with the following fields: 1. 'type' (Ascending) and 2. 'createdAt' (Descending). ";
-          description += "For detailed instructions, review the full error message from Firebase in your browser's developer console.";
+          description += `Please go to your Firebase console (Firestore > Indexes section) and create the required composite index. `;
+          description += `Look at the full error message in your browser's developer console for specific field details (e.g., 'createdAt' descending, 'city' ascending etc.). `;
         }
         description += " It may take a few minutes for the index to become active after creation.";
         toast({ title, description, variant: 'destructive', duration: 20000 });
-      } else if (error.message.includes('Insufficient stock') || error.message.includes('not found during finalization') || error.message.includes('Empty bill') || error.message.includes('Payment method required')) {
+      } else if (error.message.includes('Insufficient stock') || error.message.includes('not found during finalization') || error.message.includes('Empty invoice') || error.message.includes('City name required') || error.message.includes('Payment method required')) {
          toast({ title, description: error.message, variant: 'destructive' });
       } else {
-        toast({ title, description, variant: 'destructive' });
+        toast({ title, description: `An unexpected error occurred: ${error.message}`, variant: 'destructive' });
       }
     },
   });
 
   useEffect(() => {
-    if(latestOrder && printRef.current) { 
+    if(latestFranchiseOrder && printRef.current) { 
         handleDirectPrint();
     }
-  }, [latestOrder, handleDirectPrint]);
+  }, [latestFranchiseOrder, handleDirectPrint]);
 
 
   return (
     <div className="space-y-6 p-6">
-      <h1 className="text-3xl font-bold tracking-tight text-primary">Create New Bill</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-primary">Create Franchise Invoice</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-4">
+           <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Building className="h-5 w-5" /> Franchise Details</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <div className="space-y-2">
+                    <Label htmlFor="city" className={cn(!city.trim() && finalizeOrderMutation.isError && finalizeOrderMutation.error?.message.includes('City name required') ? "text-destructive" : "")}>
+                        City Name <span className="text-destructive">*</span>
+                    </Label>
+                    <Input 
+                        id="city"
+                        type="text"
+                        placeholder="Enter city name"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        className={cn(!city.trim() && finalizeOrderMutation.isError && finalizeOrderMutation.error?.message.includes('City name required') ? "border-destructive" : "")}
+                    />
+                     {!city.trim() && finalizeOrderMutation.isError && finalizeOrderMutation.error?.message.includes('City name required') && (
+                        <p className="text-xs text-destructive">City name is required to finalize the invoice.</p>
+                     )}
+                </div>
+            </CardContent>
+          </Card>
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Search className="h-5 w-5" /> Search Products</CardTitle>
+              <CardTitle className="flex items-center gap-2"><Search className="h-5 w-5" /> Search Godown Products</CardTitle>
             </CardHeader>
             <CardContent ref={searchInputRef}>
               <Input
                 type="text"
-                placeholder="Enter product name..."
+                placeholder="Enter godown product name..."
                 value={searchTerm}
                 onChange={(e) => { setSearchTerm(e.target.value); setShowSearchResults(true); }}
                 onFocus={() => searchTerm && setShowSearchResults(true)}
@@ -327,44 +315,23 @@ export default function BillingPage() {
                 </ScrollArea>
               )}
                {showSearchResults && searchTerm && searchResults.length === 0 && (
-                 <p className="text-sm text-muted-foreground p-2">No products found matching "{searchTerm}".</p>
+                 <p className="text-sm text-muted-foreground p-2">No godown products found matching "{searchTerm}".</p>
                )}
             </CardContent>
           </Card>
           
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><ScanLine className="h-5 w-5" /> Scan Barcode</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2 mb-2">
-                <Input
-                  ref={barcodeInputRef}
-                  type="text"
-                  placeholder="Manually enter barcode ID"
-                  value={barcodeSearchTerm}
-                  onChange={(e) => setBarcodeSearchTerm(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleManualBarcodeScan()}
-                />
-                <Button onClick={handleManualBarcodeScan} variant="outline" className="shrink-0">Add</Button>
-              </div>
-               <p className="text-xs text-muted-foreground mt-2">
-                Connect a USB barcode scanner to your device. Click the input field above, then scan a product barcode.
-              </p>
-            </CardContent>
-          </Card>
         </div>
 
         <div className="lg:col-span-2 space-y-4">
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle>Current Bill</CardTitle>
+              <CardTitle>Current Franchise Invoice</CardTitle>
             </CardHeader>
             <CardContent>
               {currentOrderItems.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <ShoppingCart className="h-12 w-12 mx-auto mb-2" />
-                  <p>No items in the bill. Add products by searching or scanning.</p>
+                  <p>No items in the invoice. Add godown products by searching.</p>
                 </div>
               ) : (
                 <Table>
@@ -410,7 +377,7 @@ export default function BillingPage() {
             </CardContent>
             {currentOrderItems.length > 0 && (
               <CardFooter className="flex flex-col sm:flex-row justify-between items-center border-t pt-4 gap-4">
-                <div className="w-full sm:w-auto">
+                 <div className="w-full sm:w-auto">
                   <Label className="text-sm font-medium mb-2 block">Payment Method</Label>
                   <RadioGroup
                     value={paymentMethod}
@@ -418,12 +385,12 @@ export default function BillingPage() {
                     className="flex flex-row space-x-4"
                   >
                     <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="cash" id="cash" />
-                      <Label htmlFor="cash" className="flex items-center gap-1 cursor-pointer"><Banknote className="h-4 w-4"/> Cash</Label>
+                      <RadioGroupItem value="cash" id="franchise-cash" />
+                      <Label htmlFor="franchise-cash" className="flex items-center gap-1 cursor-pointer"><Banknote className="h-4 w-4"/> Cash</Label>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="online" id="online" />
-                      <Label htmlFor="online" className="flex items-center gap-1 cursor-pointer"><CreditCard className="h-4 w-4"/> Online</Label>
+                      <RadioGroupItem value="online" id="franchise-online" />
+                      <Label htmlFor="franchise-online" className="flex items-center gap-1 cursor-pointer"><CreditCard className="h-4 w-4"/> Online</Label>
                     </div>
                   </RadioGroup>
                 </div>
@@ -443,7 +410,7 @@ export default function BillingPage() {
                       </>
                     ) : (
                       <>
-                          <CheckCircle className="mr-2 h-5 w-5" /> Finalize & Print Bill
+                          <CheckCircle className="mr-2 h-5 w-5" /> Finalize & Print Invoice
                       </>
                     )}
                   </Button>
@@ -454,21 +421,21 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {latestOrder && (
+      {latestFranchiseOrder && (
           <div ref={billWrapperRef} className="hidden"> 
-            <PrintableBill ref={printRef} order={latestOrder} />
+            <PrintableFranchiseBill ref={printRef} order={latestFranchiseOrder} />
           </div>
       )}
     </div>
   );
 }
 
-interface PrintableBillProps {
+interface PrintableFranchiseBillProps {
   order: Order;
 }
 
-const PrintableBill = React.forwardRef<HTMLDivElement, PrintableBillProps>(({ order }, ref) => {
-  if (!order) return null;
+const PrintableFranchiseBill = React.forwardRef<HTMLDivElement, PrintableFranchiseBillProps>(({ order }, ref) => {
+  if (!order || order.type !== 'franchise') return null;
 
   return (
     <div ref={ref} className="printable-bill-actual-content p-0 m-0 font-sans text-sm bg-white text-black">
@@ -476,10 +443,8 @@ const PrintableBill = React.forwardRef<HTMLDivElement, PrintableBillProps>(({ or
         {`
           @media print {
             body.body-is-printing {
-              background-color: white !important; /* Ensure body bg is white */
+              background-color: white !important; 
             }
-
-            /* Hide specific known parts of the app shell */
             body.body-is-printing header, 
             body.body-is-printing aside, 
             body.body-is-printing div[data-sidebar="sidebar"], 
@@ -487,53 +452,45 @@ const PrintableBill = React.forwardRef<HTMLDivElement, PrintableBillProps>(({ or
               display: none !important;
               visibility: hidden !important;
             }
-            
             .print-bill-wrapper-active {
               display: block !important;
               visibility: visible !important;
-              position: fixed !important; /* Fixed positioning for print overlay */
+              position: fixed !important;
               top: 0 !important;
               left: 0 !important;
-              width: 100vw !important; /* Full viewport */
-              height: 100vh !important; /* Full viewport */
+              width: 100vw !important;
+              height: 100vh !important;
               background-color: white !important;
-              z-index: 999999 !important; /* Very high z-index */
+              z-index: 999999 !important;
               padding: 0 !important;
               margin: 0 !important;
-              overflow: auto !important; /* Allow scroll for long bills */
+              overflow: auto !important;
             }
-
             .print-bill-wrapper-active > .printable-bill-actual-content {
               display: block !important;
               visibility: visible !important;
-              margin: 15mm !important; /* Standard A4 margins */
+              margin: 15mm !important; 
               padding: 0 !important;
-              background-color: white !important; /* Ensure content background is white */
-              color: black !important; /* Ensure text is black */
-              width: auto !important; /* Content flows naturally within margins */
+              background-color: white !important;
+              color: black !important;
+              width: auto !important;
               box-sizing: border-box !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }
-            
-            /* Ensure all children within .printable-bill-actual-content are visible */
             .print-bill-wrapper-active > .printable-bill-actual-content * {
                 visibility: visible !important;
             }
-
-            /* Reset styles for elements inside the bill that might be hidden by generic rules */
             .print-bill-wrapper-active .print-container,
             .print-bill-wrapper-active .print-container * {
                 color: black !important;
                 background-color: transparent !important;
                 visibility: visible !important;
             }
-            
             @page { 
               size: A4; 
-              margin: 0; /* Page margins are handled by .printable-bill-actual-content's margin */
+              margin: 0; 
             }
-
             .print-bill-wrapper-active .print-container { width: 100%; margin: 0 auto; }
             .print-bill-wrapper-active .header { text-align: center; margin-bottom: 15px; }
             .print-bill-wrapper-active .shop-name { font-size: 1.8em; font-weight: bold; color: #1a1a1a !important; margin-bottom: 3px; }
@@ -553,9 +510,7 @@ const PrintableBill = React.forwardRef<HTMLDivElement, PrintableBillProps>(({ or
             .print-bill-wrapper-active .total-section .grand-total { font-size: 1.3em; color: #1a1a1a !important; }
             .print-bill-wrapper-active .footer { text-align: center; margin-top: 25px; padding-top: 12px; border-top: 1px solid #eee !important; font-size: 0.85em; color: #505050 !important; }
             .print-bill-wrapper-active .barcode-section { text-align: center; margin-top: 15px; }
-            
-            /* Ensure all elements are exactly colored for printing */
-            body.body-is-printing * { /* Apply this to all elements when printing */
+            body.body-is-printing * { 
               -webkit-print-color-adjust: exact !important; 
               print-color-adjust: exact !important;
             }
@@ -564,17 +519,17 @@ const PrintableBill = React.forwardRef<HTMLDivElement, PrintableBillProps>(({ or
       </style>
       <div className="print-container">
         <div className="header">
-          <div className="shop-name">{SHOP_NAME}</div>
-          <div className="address-info">{SHOP_ADDRESS}</div>
-          <div className="address-info">{SHOP_STATE}</div>
-          <div className="contact-info">Contact: {CONTACT_NUMBERS.join(' / ')}</div>
-          {SHOP_GSTIN && <div className="gstin-info">GSTIN: {SHOP_GSTIN}</div>}
+          <div className="shop-name">{FRANCHISE_SHOP_NAME}</div>
+          <div className="address-info">{FRANCHISE_ADDRESS}</div>
+          <div className="address-info">{order.city}, {FRANCHISE_STATE}</div>
+          <div className="contact-info">Contact: {FRANCHISE_CONTACT_NUMBERS.join(' / ')}</div>
+          <div className="gstin-info">GSTIN: {FRANCHISE_GSTIN}</div>
         </div>
 
         <div className="order-details">
-          <p><strong>Order Number:</strong> {order.orderNumber}</p>
+          <p><strong>Invoice Number:</strong> {order.orderNumber}</p>
           <p><strong>Date:</strong> {format(new Date(order.createdAt), 'dd/MM/yyyy HH:mm:ss')}</p>
-           {order.paymentMethod && <p className="payment-method-info"><strong>Payment Method:</strong> {order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1)}</p>}
+          {order.paymentMethod && <p className="payment-method-info"><strong>Payment Method:</strong> {order.paymentMethod.charAt(0).toUpperCase() + order.paymentMethod.slice(1)}</p>}
         </div>
 
         <table className="items-table">
@@ -605,18 +560,18 @@ const PrintableBill = React.forwardRef<HTMLDivElement, PrintableBillProps>(({ or
         </div>
         
         <div className="barcode-section">
-            <p className="text-xs mb-1">Order ID:</p>
+            <p className="text-xs mb-1">Invoice ID:</p>
             <BarcodeDisplay value={order.orderNumber} />
         </div>
 
         <div className="footer">
-          <p>Thank you for your purchase!</p>
-          <p>Visit us again at {SHOP_NAME.split(',')[0]}.</p>
+          <p>Thank you for your business!</p>
+          <p>{FRANCHISE_SHOP_NAME}</p>
         </div>
       </div>
     </div>
   );
 });
-PrintableBill.displayName = 'PrintableBill';
+PrintableFranchiseBill.displayName = 'PrintableFranchiseBill';
 
 

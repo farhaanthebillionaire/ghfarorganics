@@ -2,7 +2,7 @@
 // @ts-nocheck
 'use client';
 
-import type { Order, OrderItem } from '@/types'; // Removed FranchiseDetails as it's not directly used here
+import type { Order, OrderItem, FranchiseDetails } from '@/types';
 import React, { useState, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogFo
 import { Eye, PackageSearch, Printer, Filter, FileSpreadsheet, History } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import { SHOP_NAME, CONTACT_NUMBERS, SHOP_ADDRESS, SHOP_GSTIN, SHOP_STATE } from '@/lib/constants'; // Added SHOP_ADDRESS, GSTIN, STATE
+import { FRANCHISE_SHOP_NAME, FRANCHISE_CONTACT_NUMBERS, FRANCHISE_ADDRESS, FRANCHISE_GSTIN, FRANCHISE_STATE } from '@/lib/constants';
 import { BarcodeDisplay } from '@/components/inventory/BarcodeDisplay';
 import { DatePickerWithRange } from '@/components/ui/date-picker-with-range';
 import type { DateRange } from 'react-day-picker';
@@ -22,32 +22,30 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import * as dataStore from '@/lib/data-store';
 import * as XLSX from 'xlsx';
-// Removed Select components as type filter is removed
 
-// Fetch only standard orders
-const fetchStandardOrdersFromStore = async (dateRange?: DateRange, searchTerm: string = ''): Promise<Order[]> => {
+const fetchFranchiseInvoicesFromStore = async (dateRange?: DateRange, searchTerm: string = ''): Promise<Order[]> => {
   const filters: any = { orderBy: 'createdAt', orderDirection: 'desc' };
   if (dateRange?.from) filters.startDate = dateRange.from;
   if (dateRange?.to) filters.endDate = dateRange.to;
   if (searchTerm) filters.orderNumber = searchTerm; 
 
-  const orders = await dataStore.getStandardOrders(filters);
-  return orders;
+  // Use the new dedicated function for fetching franchise invoices
+  const invoices = await dataStore.getFranchiseInvoices(filters);
+  return invoices;
 };
 
 
-export default function OrdersPage() {
+export default function FranchiseInvoiceHistoryPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const printOrderRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState('');
-  // orderTypeFilter is removed as this page is now specific to standard bills.
 
-  const { data: orders = [], isLoading } = useQuery<Order[]>({
-    queryKey: ['standardOrders', dateRange, searchTerm], // Query key specific to standard orders
-    queryFn: () => fetchStandardOrdersFromStore(dateRange, searchTerm),
+  const { data: franchiseInvoices = [], isLoading } = useQuery<Order[]>({
+    queryKey: ['franchiseInvoices', dateRange, searchTerm], // Keep this query key specific to franchise invoices
+    queryFn: () => fetchFranchiseInvoicesFromStore(dateRange, searchTerm),
   });
 
   const handlePrintOrder = () => {
@@ -107,28 +105,35 @@ export default function OrdersPage() {
                     }
                 }
             `;
-            
-            let htmlContent = '<html><head><title>Bill - ' + selectedOrder.orderNumber + '</title>';
-            htmlContent += '<style>' + styles + '</style></head><body>';
-            htmlContent += '<div class="print-container">' + contentToPrint + '</div>';
-            htmlContent += '<script>';
-            htmlContent += 'window.onload = function() {';
-            htmlContent += '  setTimeout(function() {';
-            htmlContent += '    window.print();';
-            htmlContent += '    window.onafterprint = function() { window.close(); };';
-            htmlContent += '  }, 250);'; 
-            htmlContent += '};';
-            htmlContent += '</script>';
-            htmlContent += '</body></html>';
 
-            printWindow.document.write(htmlContent);
+            printWindow.document.write(`
+                <html>
+                    <head>
+                        <title>Franchise Invoice - ${selectedOrder.orderNumber}</title>
+                        <style>${styles}</style>
+                    </head>
+                    <body>
+                        <div class="print-container">
+                            ${contentToPrint}
+                        </div>
+                        <script>
+                            window.onload = function() {
+                                setTimeout(function() {
+                                    window.print();
+                                    window.onafterprint = function() { window.close(); };
+                                }, 250); 
+                            }
+                        </script>
+                    </body>
+                </html>
+            `);
             printWindow.document.close();
-            toast({ title: "Printing", description: "Bill for order " + selectedOrder.orderNumber + " sent to printer." });
+            toast({ title: "Printing", description: `Invoice ${selectedOrder.orderNumber} sent to printer.` });
         } else {
             toast({ title: "Print Error", description: "Could not open print window. Please check pop-up blocker.", variant: "destructive" });
         }
     } else {
-        toast({ title: "Print Error", description: "No bill content to print or bill not selected.", variant: "destructive" });
+        toast({ title: "Print Error", description: "No invoice content to print or invoice not selected.", variant: "destructive" });
     }
   };
 
@@ -142,14 +147,15 @@ export default function OrdersPage() {
     setSearchTerm(event.target.value);
   };
 
-  const handleExportOrders = () => {
-    if (orders.length === 0) {
-      toast({ title: 'No Data', description: 'There are no standard bills to export.', variant: 'destructive' });
+  const handleExportFranchiseInvoices = () => {
+    if (franchiseInvoices.length === 0) {
+      toast({ title: 'No Data', description: 'There are no franchise invoices to export.', variant: 'destructive' });
       return;
     }
-    const dataToExport = orders.map(order => ({
-      'Bill Number': order.orderNumber,
-      'Firestore Order ID': order.id,
+    const dataToExport = franchiseInvoices.map(order => ({
+      'Invoice Number': order.orderNumber,
+      'Firestore Order ID': order.id, 
+      'City': order.city,
       'Date': format(new Date(order.createdAt), 'yyyy-MM-dd HH:mm:ss'),
       'Total Amount (₹)': order.totalAmount.toFixed(2),
       'Number of Items': order.items.length,
@@ -158,9 +164,9 @@ export default function OrdersPage() {
     }));
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'StandardBills');
-    XLSX.writeFile(workbook, 'standard_bills_export.xlsx');
-    toast({ title: 'Export Successful', description: 'Standard Bills data has been exported to Excel.' });
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'FranchiseInvoices');
+    XLSX.writeFile(workbook, 'franchise_invoices_export.xlsx');
+    toast({ title: 'Export Successful', description: 'Franchise invoices data has been exported to Excel.' });
   };
 
 
@@ -168,12 +174,12 @@ export default function OrdersPage() {
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-primary flex items-center">
-          <History className="mr-2 h-7 w-7" /> Standard Bill History
+          <History className="mr-2 h-7 w-7" /> Franchise Invoice History
         </h1>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <Input
             type="text"
-            placeholder="Search by Bill No..."
+            placeholder="Search by Invoice No..."
             value={searchTerm}
             onChange={handleSearchChange}
             className="w-full sm:w-auto flex-grow"
@@ -186,7 +192,7 @@ export default function OrdersPage() {
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="end">
               <div className="p-4 space-y-2">
-                <Label>Bill Date Range</Label>
+                <Label>Invoice Date Range</Label>
                 <DatePickerWithRange
                     className="w-full"
                     date={dateRange}
@@ -200,7 +206,7 @@ export default function OrdersPage() {
               </div>
             </PopoverContent>
           </Popover>
-          <Button onClick={handleExportOrders} variant="outline" className="w-full sm:w-auto">
+          <Button onClick={handleExportFranchiseInvoices} variant="outline" className="w-full sm:w-auto">
             <FileSpreadsheet className="mr-2 h-4 w-4" /> Export to Excel
           </Button>
         </div>
@@ -209,8 +215,8 @@ export default function OrdersPage() {
       {isLoading ? (
         <Card className="shadow-lg">
           <CardHeader>
-            <Skeleton className="h-6 w-32" />
-            <Skeleton className="h-4 w-48 mt-1" />
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-4 w-64 mt-1" />
           </CardHeader>
           <CardContent className="p-0 md:p-6">
             <Table>
@@ -218,6 +224,7 @@ export default function OrdersPage() {
                 <TableRow>
                   <TableHead><Skeleton className="h-5 w-24" /></TableHead>
                   <TableHead><Skeleton className="h-5 w-32" /></TableHead>
+                  <TableHead><Skeleton className="h-5 w-20" /></TableHead>
                   <TableHead><Skeleton className="h-5 w-16" /></TableHead>
                   <TableHead className="text-right"><Skeleton className="h-5 w-20" /></TableHead>
                 </TableRow>
@@ -228,6 +235,7 @@ export default function OrdersPage() {
                     <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                     <TableCell className="text-right"><Skeleton className="h-8 w-8" /></TableCell>
                   </TableRow>
                 ))}
@@ -235,22 +243,22 @@ export default function OrdersPage() {
             </Table>
           </CardContent>
         </Card>
-      ) : orders.length === 0 ? (
+      ) : franchiseInvoices.length === 0 ? (
         <Card className="shadow-lg">
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <PackageSearch className="h-16 w-16 text-muted-foreground mb-4" />
-            <h2 className="text-xl font-semibold text-foreground">No Standard Bills Found</h2>
+            <h2 className="text-xl font-semibold text-foreground">No Franchise Invoices Found</h2>
             <p className="text-muted-foreground mt-1">
-                {searchTerm || dateRange ? "No standard bills match your current filters." : "There are no standard bills in the system yet."}
+                {searchTerm || dateRange ? "No franchise invoices match your current filters." : "There are no franchise invoices in the system yet."}
             </p>
           </CardContent>
         </Card>
       ) : (
       <Card className="shadow-lg">
         <CardHeader>
-            <CardTitle>All Standard Bills</CardTitle>
+            <CardTitle>All Franchise Invoices</CardTitle>
             <CardDescription>
-              A list of all processed standard customer bills.
+              A list of all processed franchise invoices.
               {dateRange?.from && (
                 <span> Filtered from {format(dateRange.from, "LLL dd, y")}
                   {dateRange.to && ` to ${format(dateRange.to, "LLL dd, y")}`}.
@@ -263,17 +271,19 @@ export default function OrdersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Bill No.</TableHead>
+              <TableHead>Invoice No.</TableHead>
               <TableHead>Date</TableHead>
+              <TableHead>City</TableHead>
               <TableHead>Total Amount</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {orders.map((order) => (
+            {franchiseInvoices.map((order) => (
               <TableRow key={order.id}>
                 <TableCell className="font-medium">{order.orderNumber}</TableCell>
                 <TableCell>{format(new Date(order.createdAt), 'dd MMM yyyy, hh:mm a')}</TableCell>
+                <TableCell>{order.city || 'N/A'}</TableCell>
                 <TableCell>₹{order.totalAmount.toFixed(2)}</TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon" onClick={() => viewOrderDetails(order)} className="text-primary hover:text-primary/80">
@@ -291,23 +301,24 @@ export default function OrdersPage() {
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-md"> 
           <DialogHeader>
-            <DialogTitle>Standard Bill Details - {selectedOrder?.orderNumber}</DialogTitle>
+            <DialogTitle>Franchise Invoice - {selectedOrder?.orderNumber}</DialogTitle>
           </DialogHeader>
-          {selectedOrder && selectedOrder.type === 'standard' && (
+          {selectedOrder && selectedOrder.type === 'franchise' && (
             <>
                 <div ref={printOrderRef} className="printable-bill-content space-y-3 text-xs"> 
                     <div className="header text-center mb-3">
                         <h2 className="shop-name text-base font-bold">
-                            {SHOP_NAME}
+                            {FRANCHISE_SHOP_NAME}
                         </h2>
-                        <p className="address-info">{SHOP_ADDRESS}</p>
-                        <p className="address-info">{SHOP_STATE}</p>
-                        <p className="contact-info">Contact: {CONTACT_NUMBERS.join(' / ')}</p>
-                        {SHOP_GSTIN && <p className="gstin-info">GSTIN: {SHOP_GSTIN}</p>}
+                        <p className="address-info">{FRANCHISE_ADDRESS}</p>
+                        <p className="address-info">{selectedOrder.city}, {FRANCHISE_STATE}</p>
+                        <p className="contact-info">Contact: {FRANCHISE_CONTACT_NUMBERS.join(' / ')}</p>
+                        <p className="gstin-info">GSTIN: {FRANCHISE_GSTIN}</p>
                     </div>
                     <div className="order-details mb-2 pb-1 border-b border-dashed border-gray-400">
-                        <p><strong>Bill No:</strong> {selectedOrder.orderNumber}</p>
+                        <p><strong>Invoice No:</strong> {selectedOrder.orderNumber}</p>
                         <p><strong>Date:</strong> {format(new Date(selectedOrder.createdAt), 'dd/MM/yy HH:mm')}</p>
+                        {selectedOrder.city && <p><strong>City:</strong> {selectedOrder.city}</p>}
                         {selectedOrder.paymentMethod && <p className="payment-method-info"><strong>Payment Method:</strong> {selectedOrder.paymentMethod.charAt(0).toUpperCase() + selectedOrder.paymentMethod.slice(1)}</p>}
                     </div>
                     <table className="items-table w-full border-collapse mb-2">
@@ -339,13 +350,13 @@ export default function OrdersPage() {
                         <BarcodeDisplay value={selectedOrder.orderNumber} />
                     </div>
                     <div className="footer text-center mt-4 text-xs">
-                        <p>Thank you for your purchase!</p>
-                        <p>Visit us again.</p>
+                        <p>Thank you for your business!</p>
+                        <p>{FRANCHISE_SHOP_NAME}</p>
                     </div>
                 </div>
                 <DialogFooter className="mt-4">
                     <Button variant="outline" onClick={handlePrintOrder}>
-                        <Printer className="mr-2 h-4 w-4" /> Print Bill
+                        <Printer className="mr-2 h-4 w-4" /> Print Invoice
                     </Button>
                     <DialogClose asChild>
                         <Button type="button">Close</Button>

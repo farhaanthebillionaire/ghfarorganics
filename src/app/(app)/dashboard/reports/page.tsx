@@ -2,13 +2,13 @@
 // @ts-nocheck
 'use client';
 
-import { useState, useMemo } from 'react'; // Added useMemo
+import { useState, useMemo } from 'react'; 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { BarChart, LineChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { Order, SalesData } from '@/types';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths, subWeeks, subYears, startOfYear, endOfYear } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, subMonths, subWeeks, subYears, startOfYear, endOfYear, getYear } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, DollarSign, Package, CalendarDays, FileSpreadsheet } from 'lucide-react';
@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 
 
 type ReportPeriod = 'weekly' | 'monthly' | 'yearly';
+type ReportDataType = 'all' | 'standard' | 'franchise';
 
 interface ReportData {
   periodData: SalesData[];
@@ -26,28 +27,36 @@ interface ReportData {
   averageOrderValue: number;
 }
 
-const fetchReportData = async (period: ReportPeriod): Promise<ReportData> => {
-  // dataStore.getOrders fetches from Firestore and converts Timestamps to Dates
-  const orders = await dataStore.getOrders({ orderBy: "createdAt", orderDirection: "asc" });
+const fetchReportDataForType = async (period: ReportPeriod, dataType: ReportDataType): Promise<ReportData> => {
+  let orders: Order[] = [];
+
+  if (dataType === 'all') {
+    const standardOrders = await dataStore.getStandardOrders({ orderBy: "createdAt", orderDirection: "asc" });
+    const franchiseInvoices = await dataStore.getFranchiseInvoices({ orderBy: "createdAt", orderDirection: "asc" });
+    orders = [...standardOrders, ...franchiseInvoices].sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  } else if (dataType === 'standard') {
+    orders = await dataStore.getStandardOrders({ orderBy: "createdAt", orderDirection: "asc" });
+  } else if (dataType === 'franchise') {
+    orders = await dataStore.getFranchiseInvoices({ orderBy: "createdAt", orderDirection: "asc" });
+  }
   
   let periodData: SalesData[] = [];
   const now = new Date();
 
   if (period === 'weekly') {
-    const weeks = Array.from({ length: 4 }, (_, i) => subWeeks(now, i)).reverse();
+    const weeks = Array.from({ length: 12 }, (_, i) => subWeeks(now, i)).reverse(); // Show last 12 weeks
     periodData = weeks.map(weekStartTarget => {
       const start = startOfWeek(weekStartTarget, { weekStartsOn: 1 }); 
       const end = endOfWeek(weekStartTarget, { weekStartsOn: 1 });
-      // Filter using Date objects
       const weekOrders = orders.filter(o => new Date(o.createdAt) >= start && new Date(o.createdAt) <= end);
       return {
-        period: `Week of ${format(start, 'MMM dd')}`,
+        period: `W${format(start, 'w')} ${format(start, 'MMM dd')}`, // Week number and start date
         totalSales: weekOrders.reduce((sum, o) => sum + o.totalAmount, 0),
         totalOrders: weekOrders.length,
       };
     });
   } else if (period === 'monthly') {
-    const months = Array.from({ length: 6 }, (_, i) => subMonths(now, i)).reverse();
+    const months = Array.from({ length: 12 }, (_, i) => subMonths(now, i)).reverse(); // Show last 12 months
      periodData = months.map(monthStartTarget => {
       const start = startOfMonth(monthStartTarget);
       const end = endOfMonth(monthStartTarget);
@@ -59,9 +68,10 @@ const fetchReportData = async (period: ReportPeriod): Promise<ReportData> => {
       };
     });
   } else if (period === 'yearly') {
-    const currentYear = now.getFullYear();
-    const firstOrderYear = orders.length > 0 ? new Date(orders[0].createdAt).getFullYear() : currentYear;
-    const yearsToDisplay = Math.min(3, currentYear - firstOrderYear + 1);
+    const currentYear = getYear(now);
+    const firstOrderYear = orders.length > 0 ? getYear(new Date(orders[0].createdAt)) : currentYear;
+    // Show data from first order year up to current year, max 5 years for readability
+    const yearsToDisplay = Math.min(5, currentYear - firstOrderYear + 1); 
 
     const years = Array.from({ length: Math.max(1, yearsToDisplay) }, (_, i) => subYears(now, i)).reverse();
     periodData = years.map(yearStartTarget => {
@@ -86,22 +96,24 @@ const fetchReportData = async (period: ReportPeriod): Promise<ReportData> => {
 
 export default function ReportsPage() {
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('monthly');
+  const [reportDataType, setReportDataType] = useState<ReportDataType>('all');
   const { toast } = useToast();
 
   const { data: reportData, isLoading, error } = useQuery<ReportData, Error>({
-    queryKey: ['reportData', reportPeriod],
-    queryFn: () => fetchReportData(reportPeriod),
+    queryKey: ['reportData', reportPeriod, reportDataType],
+    queryFn: () => fetchReportDataForType(reportPeriod, reportDataType),
   });
 
 
   const summaryStats = useMemo(() => {
     if (!reportData) return [];
+    const typeLabel = reportDataType === 'all' ? 'All Time' : (reportDataType === 'standard' ? 'Standard Bills' : 'Franchise Invoices');
     return [
-      { title: 'Total Sales (All Time)', value: `₹${reportData.totalSalesAllTime.toFixed(2)}`, icon: DollarSign, color: "text-green-500" },
-      { title: 'Total Orders (All Time)', value: reportData.totalOrdersAllTime.toString(), icon: Package, color: "text-blue-500" },
-      { title: 'Average Order Value', value: `₹${reportData.averageOrderValue.toFixed(2)}`, icon: TrendingUp, color: "text-yellow-500" },
+      { title: `Total Sales (${typeLabel})`, value: `₹${reportData.totalSalesAllTime.toFixed(2)}`, icon: DollarSign, color: "text-green-500" },
+      { title: `Total Orders (${typeLabel})`, value: reportData.totalOrdersAllTime.toString(), icon: Package, color: "text-blue-500" },
+      { title: `Avg. Order Value (${typeLabel})`, value: `₹${reportData.averageOrderValue.toFixed(2)}`, icon: TrendingUp, color: "text-yellow-500" },
     ];
-  }, [reportData]);
+  }, [reportData, reportDataType]);
 
   const handleExportReportsToExcel = () => {
     if (!reportData) {
@@ -110,10 +122,11 @@ export default function ReportsPage() {
     }
 
     const workbook = XLSX.utils.book_new();
+    const dataTypeSuffix = reportDataType.charAt(0).toUpperCase() + reportDataType.slice(1);
 
     const summarySheetData = summaryStats.map(stat => ({ Statistic: stat.title, Value: stat.value }));
     const summaryWorksheet = XLSX.utils.json_to_sheet(summarySheetData);
-    XLSX.utils.book_append_sheet(workbook, summaryWorksheet, "Summary Stats");
+    XLSX.utils.book_append_sheet(workbook, summaryWorksheet, `Summary ${dataTypeSuffix}`);
 
     if (reportData.periodData.length > 0) {
         const salesDataForExcel = reportData.periodData.map(d => ({
@@ -121,21 +134,21 @@ export default function ReportsPage() {
             'Total Sales (₹)': d.totalSales,
         }));
         const salesWorksheet = XLSX.utils.json_to_sheet(salesDataForExcel);
-        XLSX.utils.book_append_sheet(workbook, salesWorksheet, "Sales Over Time");
+        XLSX.utils.book_append_sheet(workbook, salesWorksheet, `Sales ${dataTypeSuffix}`);
 
         const ordersDataForExcel = reportData.periodData.map(d => ({
             Period: d.period,
             'Total Orders': d.totalOrders,
         }));
         const ordersWorksheet = XLSX.utils.json_to_sheet(ordersDataForExcel);
-        XLSX.utils.book_append_sheet(workbook, ordersWorksheet, "Orders Over Time");
+        XLSX.utils.book_append_sheet(workbook, ordersWorksheet, `Orders ${dataTypeSuffix}`);
     } else {
         const emptySheet = XLSX.utils.json_to_sheet([{ Message: "No detailed period data available for the selected timeframe." }]);
-        XLSX.utils.book_append_sheet(workbook, emptySheet, "Period Data");
+        XLSX.utils.book_append_sheet(workbook, emptySheet, `Data ${dataTypeSuffix}`);
     }
     
-    XLSX.writeFile(workbook, `Sales_Reports_${reportPeriod}.xlsx`);
-    toast({ title: 'Export Successful', description: `Sales_Reports_${reportPeriod}.xlsx has been downloaded.`});
+    XLSX.writeFile(workbook, `Sales_Reports_${dataTypeSuffix}_${reportPeriod}.xlsx`);
+    toast({ title: 'Export Successful', description: `Sales_Reports_${dataTypeSuffix}_${reportPeriod}.xlsx has been downloaded.`});
   };
 
 
@@ -143,15 +156,17 @@ export default function ReportsPage() {
   if (error || !reportData) return <div className="text-destructive p-6">Error loading reports: {error?.message || "Unknown error"}</div>;
 
   const { periodData } = reportData;
+  const chartTitleSuffix = reportDataType === 'all' ? '(Combined)' : (reportDataType === 'standard' ? '(Standard Bills)' : '(Franchise Invoices)');
+
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-3xl font-bold tracking-tight text-primary">Sales Reports</h1>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
           <CalendarDays className="h-5 w-5 text-muted-foreground" />
           <Select value={reportPeriod} onValueChange={(value: ReportPeriod) => setReportPeriod(value)}>
-            <SelectTrigger className="w-full sm:w-[180px] bg-card shadow-sm">
+            <SelectTrigger className="w-full sm:w-[130px] bg-card shadow-sm">
               <SelectValue placeholder="Select period" />
             </SelectTrigger>
             <SelectContent>
@@ -160,8 +175,18 @@ export default function ReportsPage() {
               <SelectItem value="yearly">Yearly</SelectItem>
             </SelectContent>
           </Select>
+           <Select value={reportDataType} onValueChange={(value: ReportDataType) => setReportDataType(value)}>
+            <SelectTrigger className="w-full sm:w-[180px] bg-card shadow-sm">
+              <SelectValue placeholder="Select data type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All (Combined)</SelectItem>
+              <SelectItem value="standard">Standard Bills Only</SelectItem>
+              <SelectItem value="franchise">Franchise Invoices Only</SelectItem>
+            </SelectContent>
+          </Select>
            <Button onClick={handleExportReportsToExcel} variant="outline" className="w-full sm:w-auto">
-            <FileSpreadsheet className="mr-2 h-4 w-4" /> Export All
+            <FileSpreadsheet className="mr-2 h-4 w-4" /> Export
           </Button>
         </div>
       </div>
@@ -182,7 +207,7 @@ export default function ReportsPage() {
 
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>Sales Over Time ({reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)})</CardTitle>
+          <CardTitle>Sales Over Time {chartTitleSuffix}</CardTitle>
           <CardDescription>
             Visualizing total sales for the selected {reportPeriod} periods.
           </CardDescription>
@@ -204,14 +229,14 @@ export default function ReportsPage() {
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-center text-muted-foreground py-10">No sales data available for the selected period.</p>
+            <p className="text-center text-muted-foreground py-10">No sales data available for the selected period and data type.</p>
           )}
         </CardContent>
       </Card>
 
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>Orders Over Time ({reportPeriod.charAt(0).toUpperCase() + reportPeriod.slice(1)})</CardTitle>
+          <CardTitle>Orders Over Time {chartTitleSuffix}</CardTitle>
            <CardDescription>
             Visualizing total orders for the selected {reportPeriod} periods.
           </CardDescription>
@@ -233,7 +258,7 @@ export default function ReportsPage() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-             <p className="text-center text-muted-foreground py-10">No order data available for the selected period.</p>
+             <p className="text-center text-muted-foreground py-10">No order data available for the selected period and data type.</p>
           )}
         </CardContent>
       </Card>
@@ -247,6 +272,7 @@ function ReportsSkeleton() {
       <div className="flex justify-between items-center">
         <Skeleton className="h-9 w-48" />
         <div className="flex items-center gap-2">
+          <Skeleton className="h-10 w-[130px]" />
           <Skeleton className="h-10 w-[180px]" />
           <Skeleton className="h-10 w-32" /> 
         </div>

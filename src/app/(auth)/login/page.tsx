@@ -20,6 +20,17 @@ export default function LoginPage() {
        <p className="mt-8 text-center text-sm text-muted-foreground">
         &copy; {new Date().getFullYear()} Grameena Home Foods, A.R Organics. All rights reserved.
       </p>
+       <p className="mt-8 text-center text-sm text-muted-foreground">
+          Website created by{' '}
+          <Link
+            href="https://www.instagram.com/farhaanthebillionaire/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary hover:underline"
+          >
+            Shaik Mohammed Farhaan
+          </Link>
+        </p>
     </div>
   );
 }

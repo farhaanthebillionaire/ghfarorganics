@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import { FloatingIconsBackground } from '@/components/layout/FloatingIconsBackground';
-import Link from 'next/link';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -48,17 +47,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               <div className="flex-grow w-full relative z-10"> {/* Ensure content is above background */}
                 {children}
               </div>
-              <footer className="p-4 text-center text-sm text-muted-foreground border-t border-border relative z-10 bg-background">
-                Website created by{' '}
-                <Link
-                  href="https://www.instagram.com/farhaanthebillionaire/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-primary hover:underline"
-                >
-                  Shaik Mohammed Farhaan
-                </Link>
-              </footer>
+              {/* Footer removed in this revert */}
             </main>
           </div>
         </div>

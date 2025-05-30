@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
+// import { FloatingIconsBackground } from '@/components/layout/FloatingIconsBackground'; // Removed
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -38,16 +39,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen>
-        {/* Outermost container: Min viewport height, allows scrolling if content overflows, establishes flex column for header and body-content */}
-        <div className="flex min-h-screen w-full flex-col bg-background">
+        {/* <FloatingIconsBackground /> */} {/* Removed */}
+        <div className="flex min-h-screen w-full flex-col bg-background relative z-0"> {/* Added relative and z-0 if background were present */}
           <AppHeader />
-          {/* Container for sidebar and main content: Takes remaining height, establishes flex row. Added overflow-hidden. */}
           <div className="flex flex-1 overflow-hidden"> 
             <AppSidebar />
-            {/* Main content area: Takes available width in flex row. Scrollable if content overflows. */}
             <main className="flex-1 flex flex-col overflow-y-auto w-full"> 
-              {/* Inner div to ensure content within main can grow and utilize full width */}
-              <div className="flex-grow w-full">
+              <div className="flex-grow w-full p-4 md:p-6"> {/* Added default padding */}
                 {children}
               </div>
             </main>

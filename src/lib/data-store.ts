@@ -1,3 +1,4 @@
+
 'use server';
 
 import type { Product, Order, OrderItem, GodownProduct, PaymentMethod, PaymentMethodTrendData } from '@/types';
@@ -259,23 +260,21 @@ const initializeDataStore = async () => {
 // --- Product Functions (Main Inventory) ---
 export const getProducts = async (filters?: { name?: string, uniqueId?: string, limit?: number, orderBy?: string, orderDirection?: 'asc' | 'desc' }): Promise<Product[]> => {
   await initializeDataStore();
-  let q = query(productsCollection);
+  let qConstraints = [];
 
-  if (filters?.name) {
-    // Firestore partial string search is complex. Client-side filter for now.
-  }
   if (filters?.uniqueId) {
-    q = query(q, where('uniqueId', '==', filters.uniqueId));
+    qConstraints.push(where('uniqueId', '==', filters.uniqueId));
   }
 
   if (filters?.orderBy && (filters.orderDirection === 'asc' || filters.orderDirection === 'desc')) {
-    q = query(q, orderBy(filters.orderBy, filters.orderDirection));
+    qConstraints.push(orderBy(filters.orderBy, filters.orderDirection));
   }
   
   if (filters?.limit) {
-    q = query(q, limit(filters.limit));
+    qConstraints.push(limit(filters.limit));
   }
   
+  const q = query(productsCollection, ...qConstraints);
   const snapshot = await getDocs(q);
   let result = snapshot.docs.map(mapDocToProduct);
 
@@ -309,13 +308,25 @@ export const addProduct = async (productData: Omit<Product, 'id' | 'createdAt' |
   return mapDocToProduct(newProductSnap);
 };
 
-export const updateProduct = async (id: string, updates: Partial<Omit<Product, 'id' | 'createdAt'>>): Promise<Product | undefined> => {
+export const updateProduct = async (id: string, updates: Partial<Omit<Product, 'id' | 'createdAt'>>, options?: { _isSyncCall?: boolean }): Promise<Product | undefined> => {
   await initializeDataStore();
   const docRef = doc(db, 'products', id);
   const dataToUpdate = toFirestoreProductData(updates); 
   await updateDoc(docRef, dataToUpdate);
-  const updatedSnap = await getDoc(docRef);
-  return updatedSnap.exists() ? mapDocToProduct(updatedSnap) : undefined;
+
+  if (updates.price !== undefined && !options?._isSyncCall) {
+    const updatedProductSnap = await getDoc(docRef);
+    if (updatedProductSnap.exists()) {
+      const updatedProduct = mapDocToProduct(updatedProductSnap);
+      const godownProduct = await getGodownProductByUniqueId(updatedProduct.uniqueId);
+      if (godownProduct && godownProduct.price !== updatedProduct.price) {
+        console.log(`Syncing price from Inventory to Godown for ${updatedProduct.name} (ID: ${updatedProduct.uniqueId})`);
+        await updateGodownProduct(godownProduct.id, { price: updatedProduct.price }, { _isSyncCall: true });
+      }
+    }
+  }
+  const finalSnap = await getDoc(docRef);
+  return finalSnap.exists() ? mapDocToProduct(finalSnap) : undefined;
 };
 
 export const deleteProduct = async (id: string): Promise<boolean> => {
@@ -332,21 +343,19 @@ export const deleteProduct = async (id: string): Promise<boolean> => {
 // --- Godown Product Functions ---
 export const getGodownProducts = async (filters?: { name?: string, uniqueId?: string, limit?: number, orderBy?: string, orderDirection?: 'asc' | 'desc' }): Promise<GodownProduct[]> => {
   await initializeDataStore();
-  let q = query(godownProductsCollection);
+  let qConstraints = [];
 
-  if (filters?.name) {
-    // Client-side filter for partial name match
-  }
   if (filters?.uniqueId) {
-    q = query(q, where('uniqueId', '==', filters.uniqueId));
+    qConstraints.push(where('uniqueId', '==', filters.uniqueId));
   }
   if (filters?.orderBy && (filters.orderDirection === 'asc' || filters.orderDirection === 'desc')) {
-    q = query(q, orderBy(filters.orderBy, filters.orderDirection));
+    qConstraints.push(orderBy(filters.orderBy, filters.orderDirection));
   }
   if (filters?.limit) {
-    q = query(q, limit(filters.limit));
+    qConstraints.push(limit(filters.limit));
   }
 
+  const q = query(godownProductsCollection, ...qConstraints);
   const snapshot = await getDocs(q);
   let result = snapshot.docs.map(mapDocToGodownProduct);
 
@@ -376,16 +385,38 @@ export const addGodownProduct = async (godownProductData: Omit<GodownProduct, 'i
   const dataWithTimestamps = toFirestoreGodownProductData({ ...godownProductData });
   const docRef = await addDoc(godownProductsCollection, dataWithTimestamps);
   const newGodownProductSnap = await getDoc(docRef);
-  return mapDocToGodownProduct(newGodownProductSnap);
+  const newGodownProduct = mapDocToGodownProduct(newGodownProductSnap);
+
+  // After adding to Godown, if a price is set, sync it to inventory if item exists by uniqueId
+  if (newGodownProduct.price !== undefined) {
+      const inventoryProduct = await getProductByUniqueId(newGodownProduct.uniqueId);
+      if (inventoryProduct && inventoryProduct.price !== newGodownProduct.price) {
+          console.log(`Syncing price from new Godown product to Inventory for ${newGodownProduct.name} (ID: ${newGodownProduct.uniqueId})`);
+          await updateProduct(inventoryProduct.id, { price: newGodownProduct.price }, { _isSyncCall: true });
+      }
+  }
+  return newGodownProduct;
 };
 
-export const updateGodownProduct = async (id: string, updates: Partial<Omit<GodownProduct, 'id' | 'createdAt'>>): Promise<GodownProduct | undefined> => {
+export const updateGodownProduct = async (id: string, updates: Partial<Omit<GodownProduct, 'id' | 'createdAt'>>, options?: { _isSyncCall?: boolean }): Promise<GodownProduct | undefined> => {
   await initializeDataStore();
   const docRef = doc(db, 'godownProducts', id);
   const dataToUpdate = toFirestoreGodownProductData(updates);
   await updateDoc(docRef, dataToUpdate);
-  const updatedSnap = await getDoc(docRef);
-  return updatedSnap.exists() ? mapDocToGodownProduct(updatedSnap) : undefined;
+
+  if (updates.price !== undefined && !options?._isSyncCall) {
+    const updatedGodownProductSnap = await getDoc(docRef);
+     if (updatedGodownProductSnap.exists()) {
+      const updatedGodownProduct = mapDocToGodownProduct(updatedGodownProductSnap);
+      const inventoryProduct = await getProductByUniqueId(updatedGodownProduct.uniqueId);
+      if (inventoryProduct && inventoryProduct.price !== updatedGodownProduct.price) {
+        console.log(`Syncing price from Godown to Inventory for ${updatedGodownProduct.name} (ID: ${updatedGodownProduct.uniqueId})`);
+        await updateProduct(inventoryProduct.id, { price: updatedGodownProduct.price }, { _isSyncCall: true });
+      }
+    }
+  }
+  const finalSnap = await getDoc(docRef);
+  return finalSnap.exists() ? mapDocToGodownProduct(finalSnap) : undefined;
 };
 
 export const deleteGodownProduct = async (id: string): Promise<boolean> => {
@@ -437,7 +468,13 @@ export const moveGodownStockToInventory = async (
         inventoryProductRef = existingInventoryProductDoc.ref;
         const existingInventoryProduct = mapDocToProduct(existingInventoryProductDoc);
         newInventoryQuantity = existingInventoryProduct.quantity + quantityToMove;
-        transaction.update(inventoryProductRef, toFirestoreProductData({ quantity: newInventoryQuantity }));
+        
+        const inventoryUpdatePayload: Partial<Product> = { 
+          quantity: newInventoryQuantity,
+          price: godownProduct.price // Ensure price from godown is used for existing inventory item
+        };
+        transaction.update(inventoryProductRef, toFirestoreProductData(inventoryUpdatePayload));
+
       } else {
         inventoryProductRef = doc(productsCollection); 
         newInventoryQuantity = quantityToMove;
@@ -445,7 +482,7 @@ export const moveGodownStockToInventory = async (
           name: godownProduct.name, 
           price: godownProduct.price, 
           quantity: newInventoryQuantity,
-          uniqueId: godownProduct.uniqueId,
+          uniqueId: godownProduct.uniqueId, 
         };
         transaction.set(inventoryProductRef, toFirestoreProductData(newInventoryProductData));
       }
@@ -453,7 +490,7 @@ export const moveGodownStockToInventory = async (
       const newGodownQuantity = godownProduct.quantity - quantityToMove;
       transaction.update(godownProductRef, toFirestoreGodownProductData({ quantity: newGodownQuantity }));
     });
-    return { success: true, message: `${quantityToMove} unit(s) of ${godownProductName} moved to inventory successfully.` };
+    return { success: true, message: `${quantityToMove} unit(s) of ${godownProductName} moved to inventory successfully. Inventory price updated if applicable.` };
   } catch (error: any) {
     console.error("Error moving stock to inventory:", error);
     return { success: false, message: `Failed to move stock for ${godownProductName}: ${error.message}` };
@@ -468,8 +505,6 @@ export const generateNextOrderNumber = async (type: 'standard' | 'franchise'): P
   const targetCollection = type === 'standard' ? ordersCollection : franchiseInvoicesCollection;
   const prefix = type === 'standard' ? 'ORD-' : 'FINV-';
   
-  // Query the appropriate collection, ordering by createdAt to get recent ones, then filter by prefix.
-  // This is more robust than ordering by orderNumber directly if orderNumbers can have non-numeric parts or varying lengths.
   let q = query(targetCollection, orderBy('createdAt', 'desc'), limit(500)); 
   
   const snapshot = await getDocs(q);
@@ -698,5 +733,6 @@ export const seedData = async () => {
   await _clearDataStore(); 
   await initializeDataStore(); 
 };
+
 
 

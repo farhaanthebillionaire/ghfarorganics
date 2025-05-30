@@ -21,10 +21,11 @@ import { cn } from '@/lib/utils';
 import * as dataStore from '@/lib/data-store';
 
 const fetchGodownProductsForFranchiseBilling = async (searchTerm: string = ''): Promise<GodownProduct[]> => {
-  let filters: any = { orderBy: 'name', orderDirection: 'asc', limit: 10 };
+  let filters: any = { orderBy: 'name', orderDirection: 'asc' }; // Removed limit: 10
   if (searchTerm) {
-    filters.name = searchTerm; 
+    filters.name = searchTerm; // This will be used for client-side filtering in dataStore.getGodownProducts
   }
+  // dataStore.getGodownProducts will fetch all if no limit, then filter by name client-side (case-insensitive)
   const products = await dataStore.getGodownProducts(filters);
   return products;
 };
@@ -573,5 +574,8 @@ const PrintableFranchiseBill = React.forwardRef<HTMLDivElement, PrintableFranchi
   );
 });
 PrintableFranchiseBill.displayName = 'PrintableFranchiseBill';
+
+
+
 
 

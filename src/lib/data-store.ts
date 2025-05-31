@@ -86,13 +86,21 @@ const toFirestoreOrderData = (orderData: Partial<Order>): any => {
     }
     data.totalAmount = Number(data.totalAmount);
     data.type = orderData.type || 'standard'; 
-    if(orderData.city && orderData.type === 'franchise') data.city = orderData.city;
-    else delete data.city; 
+
+    if (orderData.type === 'franchise') {
+      if (orderData.city) data.city = orderData.city;
+      if (orderData.buyerName) data.buyerName = orderData.buyerName;
+      if (orderData.buyerPhoneNumber) data.buyerPhoneNumber = orderData.buyerPhoneNumber;
+    } else {
+      delete data.city;
+      delete data.buyerName;
+      delete data.buyerPhoneNumber;
+    }
 
     if (orderData.paymentMethod) {
       data.paymentMethod = orderData.paymentMethod;
     } else {
-      delete data.paymentMethod; // Ensure it's not set if undefined
+      delete data.paymentMethod; 
     }
 
     return data;
@@ -138,8 +146,10 @@ const mapDocToOrder = (docSnap: any): Order => {
     })),
     totalAmount: Number(data.totalAmount),
     createdAt: fromFirestoreTimestamp(data.createdAt)!,
-    type: data.type || 'standard', // Default to 'standard' if type is missing
-    city: data.city, // Will be undefined if not present
+    type: data.type || 'standard', 
+    city: data.city, 
+    buyerName: data.buyerName,
+    buyerPhoneNumber: data.buyerPhoneNumber,
     paymentMethod: data.paymentMethod as PaymentMethod | undefined,
   };
 };
@@ -157,9 +167,9 @@ const internalSeedInitialData = async () => {
     { name: 'Almond Milk', price: 3.19, quantity: 5, uniqueId: 'PROD-MILK-ALM01' },
   ];
    const godownProductsToSeed = [
-    { name: 'Organic Apples - Bulk', price: 2.50, quantity: 200, uniqueId: 'GODOWN-APPLE-BULK' },
-    { name: 'Sunflower Oil (5L Can)', price: 25.00, quantity: 50, uniqueId: 'GODOWN-SUNOIL-5L' },
-    { name: 'Wheat Flour (10kg Bag)', price: 8.00, quantity: 100, uniqueId: 'GODOWN-WFLOUR-10KG' },
+    { name: 'Organic Apples - Bulk', price: 2.50, quantity: 200, uniqueId: 'PROD-APPLE-BULK' }, // Changed prefix
+    { name: 'Sunflower Oil (5L Can)', price: 25.00, quantity: 50, uniqueId: 'PROD-SUNOIL-5L' }, // Changed prefix
+    { name: 'Wheat Flour (10kg Bag)', price: 8.00, quantity: 100, uniqueId: 'PROD-WFLOUR-10KG' }, // Changed prefix
   ];
 
   const productRefs: { [key: string]: string } = {};
@@ -195,15 +205,17 @@ const internalSeedInitialData = async () => {
 
   // Seed Franchise Invoice
   const franchiseOrderItems1: SeedOrderItem[] = [
-    { productUniqueId: 'GODOWN-SUNOIL-5L', name: 'Sunflower Oil (5L Can)', price: 25.00, quantity: 2, subtotal: 50.00, stockQuantityBeforeOrder: 50 },
-    { productUniqueId: 'GODOWN-WFLOUR-10KG', name: 'Wheat Flour (10kg Bag)', price: 8.00, quantity: 5, subtotal: 40.00, stockQuantityBeforeOrder: 100 },
+    { productUniqueId: 'PROD-SUNOIL-5L', name: 'Sunflower Oil (5L Can)', price: 25.00, quantity: 2, subtotal: 50.00, stockQuantityBeforeOrder: 50 },
+    { productUniqueId: 'PROD-WFLOUR-10KG', name: 'Wheat Flour (10kg Bag)', price: 8.00, quantity: 5, subtotal: 40.00, stockQuantityBeforeOrder: 100 },
   ];
   const franchiseInvoice1Data: Omit<Order, 'id'> = {
-    orderNumber: 'FINV-0001', // Different prefix for franchise invoices
+    orderNumber: 'FINV-0001', 
     items: franchiseOrderItems1.map(item => ({ ...item, productId: godownProductRefs[item.productUniqueId] })),
     totalAmount: franchiseOrderItems1.reduce((sum, item) => sum + item.subtotal, 0),
     createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
     type: 'franchise',
+    buyerName: 'Kadapa Franchise Store',
+    buyerPhoneNumber: '9876543210',
     city: 'Kadapa',
     paymentMethod: 'online',
   };
@@ -305,7 +317,16 @@ export const addProduct = async (productData: Omit<Product, 'id' | 'createdAt' |
   const dataWithTimestamps = toFirestoreProductData({ ...productData });
   const docRef = await addDoc(productsCollection, dataWithTimestamps);
   const newProductSnap = await getDoc(docRef);
-  return mapDocToProduct(newProductSnap);
+  const newProduct = mapDocToProduct(newProductSnap);
+
+  if (newProduct.price !== undefined) {
+    const godownProduct = await getGodownProductByUniqueId(newProduct.uniqueId);
+    if (godownProduct && godownProduct.price !== newProduct.price) {
+        console.log(`Syncing price from new Inventory product to Godown for ${newProduct.name} (ID: ${newProduct.uniqueId})`);
+        await updateGodownProduct(godownProduct.id, { price: newProduct.price }, { _isSyncCall: true });
+    }
+  }
+  return newProduct;
 };
 
 export const updateProduct = async (id: string, updates: Partial<Omit<Product, 'id' | 'createdAt'>>, options?: { _isSyncCall?: boolean }): Promise<Product | undefined> => {
@@ -387,7 +408,6 @@ export const addGodownProduct = async (godownProductData: Omit<GodownProduct, 'i
   const newGodownProductSnap = await getDoc(docRef);
   const newGodownProduct = mapDocToGodownProduct(newGodownProductSnap);
 
-  // After adding to Godown, if a price is set, sync it to inventory if item exists by uniqueId
   if (newGodownProduct.price !== undefined) {
       const inventoryProduct = await getProductByUniqueId(newGodownProduct.uniqueId);
       if (inventoryProduct && inventoryProduct.price !== newGodownProduct.price) {
@@ -471,7 +491,7 @@ export const moveGodownStockToInventory = async (
         
         const inventoryUpdatePayload: Partial<Product> = { 
           quantity: newInventoryQuantity,
-          price: godownProduct.price // Ensure price from godown is used for existing inventory item
+          price: godownProduct.price 
         };
         transaction.update(inventoryProductRef, toFirestoreProductData(inventoryUpdatePayload));
 
@@ -563,7 +583,7 @@ export const getStandardOrders = async (filters?: { startDate?: Date, endDate?: 
 };
 
 // Fetches franchise invoices from the 'franchiseInvoices' collection
-export const getFranchiseInvoices = async (filters?: { startDate?: Date, endDate?: Date, orderNumber?: string, city?: string, limit?: number, orderBy?: string, orderDirection?: 'desc' | 'asc' }): Promise<Order[]> => {
+export const getFranchiseInvoices = async (filters?: { startDate?: Date, endDate?: Date, orderNumber?: string, city?: string, buyerName?: string, buyerPhoneNumber?: string, limit?: number, orderBy?: string, orderDirection?: 'desc' | 'asc' }): Promise<Order[]> => {
   await initializeDataStore();
   let qConstraints = [];
 
@@ -578,6 +598,8 @@ export const getFranchiseInvoices = async (filters?: { startDate?: Date, endDate
   if (filters?.city) {
     qConstraints.push(where('city', '==', filters.city));
   }
+  // Note: Firestore does not support direct text search like 'includes' for buyerName, buyerPhoneNumber, orderNumber.
+  // These will be client-side filtered if broad results are acceptable, or more specific queries would be needed.
   
   if (filters?.orderBy && (filters.orderDirection === 'asc' || filters.orderDirection === 'desc')) {
     qConstraints.push(orderBy(filters.orderBy, filters.orderDirection));
@@ -593,9 +615,17 @@ export const getFranchiseInvoices = async (filters?: { startDate?: Date, endDate
   const snapshot = await getDocs(q);
   let result = snapshot.docs.map(mapDocToOrder);
 
+  // Client-side filtering for fields not easily queryable with 'includes' in Firestore
   if (filters?.orderNumber) {
     result = result.filter(o => o.orderNumber.toLowerCase().includes(filters.orderNumber!.toLowerCase()));
   }
+  if (filters?.buyerName) {
+    result = result.filter(o => o.buyerName && o.buyerName.toLowerCase().includes(filters.buyerName!.toLowerCase()));
+  }
+  if (filters?.buyerPhoneNumber) {
+     result = result.filter(o => o.buyerPhoneNumber && o.buyerPhoneNumber.includes(filters.buyerPhoneNumber!));
+  }
+
 
   return result;
 };
@@ -733,6 +763,4 @@ export const seedData = async () => {
   await _clearDataStore(); 
   await initializeDataStore(); 
 };
-
-
 

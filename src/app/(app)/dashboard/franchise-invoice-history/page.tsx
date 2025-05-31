@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogFooter } from '@/components/ui/dialog';
-import { Eye, PackageSearch, Printer, Filter, FileSpreadsheet, History } from 'lucide-react';
+import { Eye, PackageSearch, Printer, Filter, FileSpreadsheet, History, User, Phone, MapPin } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { FRANCHISE_SHOP_NAME, FRANCHISE_CONTACT_NUMBERS, FRANCHISE_ADDRESS, FRANCHISE_GSTIN, FRANCHISE_STATE } from '@/lib/constants';
@@ -27,9 +27,18 @@ const fetchFranchiseInvoicesFromStore = async (dateRange?: DateRange, searchTerm
   const filters: any = { orderBy: 'createdAt', orderDirection: 'desc' };
   if (dateRange?.from) filters.startDate = dateRange.from;
   if (dateRange?.to) filters.endDate = dateRange.to;
-  if (searchTerm) filters.orderNumber = searchTerm; 
+  
+  // Determine if searchTerm is for orderNumber, buyerName, or buyerPhoneNumber
+  if (searchTerm) {
+    if (searchTerm.match(/^\d+$/) && searchTerm.length >= 5) { // Basic check for phone number like string
+        filters.buyerPhoneNumber = searchTerm;
+    } else if (searchTerm.toUpperCase().startsWith('FINV-')) {
+        filters.orderNumber = searchTerm;
+    } else {
+        filters.buyerName = searchTerm; // Default to searching by buyer name
+    }
+  }
 
-  // Use the new dedicated function for fetching franchise invoices
   const invoices = await dataStore.getFranchiseInvoices(filters);
   return invoices;
 };
@@ -44,7 +53,7 @@ export default function FranchiseInvoiceHistoryPage() {
   const [searchTerm, setSearchTerm] = useState('');
 
   const { data: franchiseInvoices = [], isLoading } = useQuery<Order[]>({
-    queryKey: ['franchiseInvoices', dateRange, searchTerm], // Keep this query key specific to franchise invoices
+    queryKey: ['franchiseInvoices', dateRange, searchTerm], 
     queryFn: () => fetchFranchiseInvoicesFromStore(dateRange, searchTerm),
   });
 
@@ -55,36 +64,25 @@ export default function FranchiseInvoiceHistoryPage() {
             let contentToPrint = printOrderRef.current.innerHTML;
             
             const styles = `
-                body { 
-                    font-family: Arial, sans-serif; 
-                    margin: 20px; 
-                    font-size: 12px; 
-                    color: #000; 
-                    background-color: #fff; 
-                }
-                .print-container { 
-                    width: 100%; 
-                    margin: 0 auto; 
-                    color: #000; 
-                    background-color: #fff;
-                }
-                .header { text-align: center; margin-bottom: 15px; }
+                body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; color: #000; background-color: #fff; }
+                .print-container { width: 100%; margin: 0 auto; color: #000; background-color: #fff; }
+                .header { text-align: center; margin-bottom: 10px; }
                 .shop-name { font-size: 1.5em; font-weight: bold; color: #333; }
                 .address-info { font-size: 0.9em; color: #404040 !important; margin-bottom: 3px; line-height: 1.3; }
                 .contact-info { font-size: 0.9em; color: #555; }
-                .gstin-info { font-size: 0.9em; font-weight: bold; color: #303030 !important; margin-bottom: 10px; }
+                .gstin-info { font-size: 0.9em; font-weight: bold; color: #303030 !important; margin-bottom: 8px; }
+                
+                .buyer-details-section { margin-bottom: 10px; padding: 8px; border: 1px solid #bbb !important; background-color: #f7f7f7 !important; border-radius: 4px; }
+                .buyer-details-section h3 { margin-top:0; margin-bottom: 6px; font-size: 1.0em; color: #222 !important; border-bottom: 1px solid #ddd !important; padding-bottom: 3px; font-weight: bold; }
+                .buyer-details-section p { margin: 2px 0; font-size: 0.9em; line-height: 1.3; }
+                .buyer-details-section strong { color: #1a1a1a !important; }
+
                 .order-details { margin-bottom: 15px; padding-bottom: 8px; border-bottom: 1px dashed #888; }
                 .order-details p { margin: 2px 0; font-size: 0.95em; color: #333; }
                 .order-details strong { color: #000; }
                 .payment-method-info { font-style: italic; font-size: 0.9em; }
                 .items-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-                .items-table th, .items-table td { 
-                    border: 1px solid #ccc; 
-                    padding: 6px; 
-                    text-align: left; 
-                    font-size: 0.95em; 
-                    color: #333; 
-                }
+                .items-table th, .items-table td { border: 1px solid #ccc; padding: 6px; text-align: left; font-size: 0.95em; color: #333; }
                 .items-table th { background-color: #f0f0f0; font-weight: bold; color: #000; }
                 .items-table .text-right { text-align: right; }
                 .total-section { text-align: right; margin-top: 15px; }
@@ -92,41 +90,16 @@ export default function FranchiseInvoiceHistoryPage() {
                 .footer { text-align: center; margin-top: 25px; padding-top: 10px; border-top: 1px solid #eee; font-size: 0.8em; color: #555; }
                 .barcode-section { text-align: center; margin-top: 15px; }
                 .barcode-svg svg { max-width: 200px !important; height: auto !important; display: block !important; margin: 0 auto !important; } 
-                * { 
-                    visibility: visible !important;
-                    color: #000 !important;
-                    background-color: #fff !important;
-                }
-                 @media print {
-                    @page { size: A4; margin: 15mm; } 
-                    body { 
-                      -webkit-print-color-adjust: exact !important; 
-                      print-color-adjust: exact !important; 
-                    }
-                }
+                * { visibility: visible !important; color: #000 !important; background-color: #fff !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                @media print { @page { size: A4; margin: 15mm; } }
             `;
 
-            printWindow.document.write(`
-                <html>
-                    <head>
-                        <title>Franchise Invoice - ${selectedOrder.orderNumber}</title>
-                        <style>${styles}</style>
-                    </head>
-                    <body>
-                        <div class="print-container">
-                            ${contentToPrint}
-                        </div>
-                        <script>
-                            window.onload = function() {
-                                setTimeout(function() {
-                                    window.print();
-                                    window.onafterprint = function() { window.close(); };
-                                }, 250); 
-                            }
-                        </script>
-                    </body>
-                </html>
-            `);
+            printWindow.document.write(
+                `<html><head><title>Franchise Invoice - ${selectedOrder.orderNumber}</title><style>${styles}</style></head><body>
+                <div class="print-container">${contentToPrint}</div>
+                <script>window.onload = function() { setTimeout(function() { window.print(); window.onafterprint = function() { window.close(); }; }, 250); }</script>
+                </body></html>`
+            );
             printWindow.document.close();
             toast({ title: "Printing", description: `Invoice ${selectedOrder.orderNumber} sent to printer.` });
         } else {
@@ -155,6 +128,8 @@ export default function FranchiseInvoiceHistoryPage() {
     const dataToExport = franchiseInvoices.map(order => ({
       'Invoice Number': order.orderNumber,
       'Firestore Order ID': order.id, 
+      'Buyer Name': order.buyerName || 'N/A',
+      'Buyer Phone': order.buyerPhoneNumber || 'N/A',
       'City': order.city,
       'Date': format(new Date(order.createdAt), 'yyyy-MM-dd HH:mm:ss'),
       'Total Amount (₹)': order.totalAmount.toFixed(2),
@@ -171,7 +146,7 @@ export default function FranchiseInvoiceHistoryPage() {
 
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
+    <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-primary flex items-center">
           <History className="mr-2 h-7 w-7" /> Franchise Invoice History
@@ -179,7 +154,7 @@ export default function FranchiseInvoiceHistoryPage() {
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <Input
             type="text"
-            placeholder="Search by Invoice No..."
+            placeholder="Search by Inv No, Buyer Name/Phone..."
             value={searchTerm}
             onChange={handleSearchChange}
             className="w-full sm:w-auto flex-grow"
@@ -224,14 +199,16 @@ export default function FranchiseInvoiceHistoryPage() {
                 <TableRow>
                   <TableHead><Skeleton className="h-5 w-24" /></TableHead>
                   <TableHead><Skeleton className="h-5 w-32" /></TableHead>
+                  <TableHead><Skeleton className="h-5 w-32" /></TableHead>
+                  <TableHead><Skeleton className="h-5 w-24" /></TableHead>
                   <TableHead><Skeleton className="h-5 w-20" /></TableHead>
-                  <TableHead><Skeleton className="h-5 w-16" /></TableHead>
                   <TableHead className="text-right"><Skeleton className="h-5 w-20" /></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {[...Array(5)].map((_, i) => (
                   <TableRow key={i}>
+                    <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-full" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-full" /></TableCell>
@@ -273,6 +250,7 @@ export default function FranchiseInvoiceHistoryPage() {
             <TableRow>
               <TableHead>Invoice No.</TableHead>
               <TableHead>Date</TableHead>
+              <TableHead>Buyer Name</TableHead>
               <TableHead>City</TableHead>
               <TableHead>Total Amount</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -280,17 +258,11 @@ export default function FranchiseInvoiceHistoryPage() {
           </TableHeader>
           <TableBody>
             {franchiseInvoices.map((order) => (
-              <TableRow key={order.id}>
-                <TableCell className="font-medium">{order.orderNumber}</TableCell>
-                <TableCell>{format(new Date(order.createdAt), 'dd MMM yyyy, hh:mm a')}</TableCell>
-                <TableCell>{order.city || 'N/A'}</TableCell>
-                <TableCell>₹{order.totalAmount.toFixed(2)}</TableCell>
-                <TableCell className="text-right">
+              <TableRow key={order.id}><TableCell className="font-medium">{order.orderNumber}</TableCell><TableCell>{format(new Date(order.createdAt), 'dd MMM yyyy, hh:mm a')}</TableCell><TableCell>{order.buyerName || 'N/A'}</TableCell><TableCell>{order.city || 'N/A'}</TableCell><TableCell>₹{order.totalAmount.toFixed(2)}</TableCell><TableCell className="text-right">
                   <Button variant="ghost" size="icon" onClick={() => viewOrderDetails(order)} className="text-primary hover:text-primary/80">
                     <Eye className="h-4 w-4" />
                   </Button>
-                </TableCell>
-              </TableRow>
+                </TableCell></TableRow>
             ))}
           </TableBody>
         </Table>
@@ -306,40 +278,34 @@ export default function FranchiseInvoiceHistoryPage() {
           {selectedOrder && selectedOrder.type === 'franchise' && (
             <>
                 <div ref={printOrderRef} className="printable-bill-content space-y-3 text-xs"> 
-                    <div className="header text-center mb-3">
+                    <div className="header text-center mb-2">
                         <h2 className="shop-name text-base font-bold">
                             {FRANCHISE_SHOP_NAME}
                         </h2>
                         <p className="address-info">{FRANCHISE_ADDRESS}</p>
-                        <p className="address-info">{selectedOrder.city}, {FRANCHISE_STATE}</p>
                         <p className="contact-info">Contact: {FRANCHISE_CONTACT_NUMBERS.join(' / ')}</p>
                         <p className="gstin-info">GSTIN: {FRANCHISE_GSTIN}</p>
                     </div>
+
+                    <div className="buyer-details-section mb-2 p-2 border border-gray-300 bg-gray-50 rounded">
+                        <h3 className="text-sm font-semibold mb-1 border-b border-gray-200 pb-0.5">Bill To:</h3>
+                        <p><strong>Name:</strong> {selectedOrder.buyerName}</p>
+                        <p><strong>Phone:</strong> {selectedOrder.buyerPhoneNumber}</p>
+                        <p><strong>City:</strong> {selectedOrder.city}, {FRANCHISE_STATE}</p>
+                    </div>
+
                     <div className="order-details mb-2 pb-1 border-b border-dashed border-gray-400">
                         <p><strong>Invoice No:</strong> {selectedOrder.orderNumber}</p>
                         <p><strong>Date:</strong> {format(new Date(selectedOrder.createdAt), 'dd/MM/yy HH:mm')}</p>
-                        {selectedOrder.city && <p><strong>City:</strong> {selectedOrder.city}</p>}
                         {selectedOrder.paymentMethod && <p className="payment-method-info"><strong>Payment Method:</strong> {selectedOrder.paymentMethod.charAt(0).toUpperCase() + selectedOrder.paymentMethod.slice(1)}</p>}
                     </div>
                     <table className="items-table w-full border-collapse mb-2">
                         <thead>
-                        <tr className="border-b border-gray-400">
-                            <th className="p-0.5 text-left">#</th>
-                            <th className="p-0.5 text-left">Item</th>
-                            <th className="p-0.5 text-right">Price</th>
-                            <th className="p-0.5 text-right">Qty</th>
-                            <th className="p-0.5 text-right">Total</th>
-                        </tr>
+                        <tr className="border-b border-gray-400"><th className="p-0.5 text-left">#</th><th className="p-0.5 text-left">Item</th><th className="p-0.5 text-right">Price</th><th className="p-0.5 text-right">Qty</th><th className="p-0.5 text-right">Total</th></tr>
                         </thead>
                         <tbody>
                         {selectedOrder.items.map((item, index) => (
-                            <tr key={item.productId} className="border-b border-dashed border-gray-300">
-                            <td className="p-0.5">{index + 1}</td>
-                            <td className="p-0.5">{item.name}</td>
-                            <td className="p-0.5 text-right">₹{item.price.toFixed(2)}</td>
-                            <td className="p-0.5 text-right">{item.quantity}</td>
-                            <td className="p-0.5 text-right">₹{item.subtotal.toFixed(2)}</td>
-                            </tr>
+                            <tr key={item.productId} className="border-b border-dashed border-gray-300"><td className="p-0.5">{index + 1}</td><td className="p-0.5">{item.name}</td><td className="p-0.5 text-right">₹{item.price.toFixed(2)}</td><td className="p-0.5 text-right">{item.quantity}</td><td className="p-0.5 text-right">₹{item.subtotal.toFixed(2)}</td></tr>
                         ))}
                         </tbody>
                     </table>
@@ -369,4 +335,3 @@ export default function FranchiseInvoiceHistoryPage() {
     </div>
   );
 }
-

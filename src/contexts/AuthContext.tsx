@@ -1,94 +1,60 @@
 
 'use client';
 
-import type { ReactNode } from 'react';
-import React, { createContext, useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { LOGIN_ID, LOGIN_PASS, AUTH_TOKEN_COOKIE_NAME } from '@/lib/constants';
+import React, { createContext, useState, useContext, useEffect, type ReactNode } from 'react';
+import Cookies from 'js-cookie';
+import { AUTH_TOKEN_COOKIE_NAME } from '@/lib/constants';
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  login: (id: string, pass: string) => Promise<boolean>;
+  login: () => void;
   logout: () => void;
   isLoading: boolean;
 }
 
-export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Helper function to manage cookies
-const setCookie = (name: string, value: string, days?: number) => {
-  let expires = "";
-  if (days) {
-    const date = new Date();
-    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-    expires = "; expires=" + date.toUTCString();
-  }
-  // If 'days' is not provided or is 0, 'expires' remains empty, creating a session cookie
-  if (typeof document !== 'undefined') {
-    document.cookie = name + "=" + (value || "") + expires + "; path=/";
-  }
-};
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const getCookie = (name: string): string | null => {
-  if (typeof document === 'undefined') return null;
-  const nameEQ = name + "=";
-  const ca = document.cookie.split(';');
-  for (let i = 0; i < ca.length; i++) {
-    let c = ca[i];
-    while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-    if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
-  }
-  return null;
-};
-
-const eraseCookie = (name: string) => {
-  if (typeof document !== 'undefined') {
-    document.cookie = name + '=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
-  }
-};
-
-
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const token = getCookie(AUTH_TOKEN_COOKIE_NAME);
-    if (token === 'true') { // Simple token validation
-      setIsAuthenticated(true);
-    }
+    const token = Cookies.get(AUTH_TOKEN_COOKIE_NAME);
+    setIsAuthenticated(token === 'true');
     setIsLoading(false);
   }, []);
 
-  const login = useCallback(async (id: string, pass: string): Promise<boolean> => {
-    setIsLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500));
-    if (id === LOGIN_ID && pass === LOGIN_PASS) {
-      setIsAuthenticated(true);
-      // Set as a session cookie (no 'days' argument or days = 0)
-      // This cookie will be deleted when the browser is closed.
-      setCookie(AUTH_TOKEN_COOKIE_NAME, 'true'); 
-      router.push('/dashboard');
-      setIsLoading(false);
-      return true;
-    }
-    setIsAuthenticated(false);
-    setIsLoading(false);
-    return false;
-  }, [router]);
+  const login = () => {
+    // Remove the 'expires' option to make it a session cookie
+    // Session cookies are deleted when the browser session ends (e.g., browser is closed)
+    Cookies.set(AUTH_TOKEN_COOKIE_NAME, 'true', { path: '/' });
+    setIsAuthenticated(true);
+  };
 
-  const logout = useCallback(() => {
+  const logout = () => {
+    Cookies.remove(AUTH_TOKEN_COOKIE_NAME, { path: '/' }); // Added path: '/' for removal consistency
     setIsAuthenticated(false);
-    eraseCookie(AUTH_TOKEN_COOKIE_NAME);
-    router.push('/login');
-  }, [router]);
+     window.location.href = '/login';
+  };
+
+  if (isLoading) {
+    return null;
+  }
+
 
   return (
     <AuthContext.Provider value={{ isAuthenticated, login, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
-};
+}
+
+export function useAuthInternal() { // Renamed to avoid conflict if useAuth is re-exported differently
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuthInternal must be used within an AuthProvider');
+  }
+  return context;
+}
 

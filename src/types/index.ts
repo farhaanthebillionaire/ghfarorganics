@@ -38,6 +38,8 @@ export interface Order {
   createdAt: Date; // Firestore Timestamps will be converted to Date objects
   type: 'standard' | 'franchise'; // To distinguish between regular and franchise orders
   city?: string; // City for franchise invoices
+  buyerName?: string; // Buyer's name for franchise invoices
+  buyerPhoneNumber?: string; // Buyer's phone number for franchise invoices
   paymentMethod?: PaymentMethod; // Payment method used
 }
 
@@ -85,3 +87,4 @@ export interface ReportData {
   paymentMethodCounts: PaymentMethodBreakdown;
   paymentMethodTrends: PaymentMethodTrendData[];
 }
+

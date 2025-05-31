@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Search, Trash2, Printer, CheckCircle, ShoppingCart, Loader2, Building, Banknote, CreditCard } from 'lucide-react';
+import { Search, Trash2, Printer, CheckCircle, ShoppingCart, Loader2, Building, Banknote, CreditCard, User, Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { FRANCHISE_SHOP_NAME, FRANCHISE_CONTACT_NUMBERS, FRANCHISE_ADDRESS, FRANCHISE_GSTIN, FRANCHISE_STATE } from '@/lib/constants';
 import { BarcodeDisplay } from '@/components/inventory/BarcodeDisplay';
@@ -21,11 +21,10 @@ import { cn } from '@/lib/utils';
 import * as dataStore from '@/lib/data-store';
 
 const fetchGodownProductsForFranchiseBilling = async (searchTerm: string = ''): Promise<GodownProduct[]> => {
-  let filters: any = { orderBy: 'name', orderDirection: 'asc' }; // Removed limit: 10
+  let filters: any = { orderBy: 'name', orderDirection: 'asc' };
   if (searchTerm) {
-    filters.name = searchTerm; // This will be used for client-side filtering in dataStore.getGodownProducts
+    filters.name = searchTerm;
   }
-  // dataStore.getGodownProducts will fetch all if no limit, then filter by name client-side (case-insensitive)
   const products = await dataStore.getGodownProducts(filters);
   return products;
 };
@@ -36,13 +35,15 @@ export default function FranchiseInvoicePage() {
 
   const [currentOrderItems, setCurrentOrderItems] = useState<OrderItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [buyerName, setBuyerName] = useState('');
+  const [buyerPhoneNumber, setBuyerPhoneNumber] = useState('');
   const [city, setCity] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [showSearchResults, setShowSearchResults] = useState(false);
   const searchInputRef = useRef<HTMLDivElement>(null);
   const [latestFranchiseOrder, setLatestFranchiseOrder] = useState<Order | null>(null);
-  const printRef = useRef<HTMLDivElement>(null); 
-  const billWrapperRef = useRef<HTMLDivElement>(null); 
+  const printRef = useRef<HTMLDivElement>(null);
+  const billWrapperRef = useRef<HTMLDivElement>(null);
 
   const { data: searchResults = [] } = useQuery<GodownProduct[]>({
     queryKey: ['franchiseBillingGodownProducts', searchTerm],
@@ -59,7 +60,7 @@ export default function FranchiseInvoicePage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  
+
   const handleDirectPrint = useCallback(() => {
     if (printRef.current && latestFranchiseOrder && billWrapperRef.current) {
       const wrapper = billWrapperRef.current;
@@ -68,17 +69,17 @@ export default function FranchiseInvoicePage() {
       bodyEl.classList.add('body-is-printing');
       wrapper.classList.add('print-bill-wrapper-active');
       wrapper.classList.remove('hidden');
-      
+
       const printTimeout = setTimeout(() => {
         window.print();
-        
+
         wrapper.classList.remove('print-bill-wrapper-active');
         wrapper.classList.add('hidden');
         bodyEl.classList.remove('body-is-printing');
 
         toast({ title: "Printed", description: `Invoice ${latestFranchiseOrder.orderNumber} has been processed for printing.` });
-        setLatestFranchiseOrder(null); 
-      }, 250); 
+        setLatestFranchiseOrder(null);
+      }, 250);
     }
   }, [toast, latestFranchiseOrder, setLatestFranchiseOrder]);
 
@@ -125,17 +126,17 @@ export default function FranchiseInvoicePage() {
 
     if (newQuantity > productInGodown.quantity) {
         toast({ title: 'Stock Limit', description: `Cannot set quantity for ${productInGodown.name} to ${newQuantity}. Available in godown: ${productInGodown.quantity}`, variant: 'destructive' });
-        return; 
+        return;
     }
 
     setCurrentOrderItems(prevItems =>
       prevItems.map(item => {
         if (item.productId === productId) {
-          if (newQuantity <=0) return null; 
+          if (newQuantity <=0) return null;
           return { ...item, quantity: newQuantity, subtotal: newQuantity * item.price };
         }
         return item;
-      }).filter(item => item !== null) as OrderItem[] 
+      }).filter(item => item !== null) as OrderItem[]
     );
   };
 
@@ -151,6 +152,14 @@ export default function FranchiseInvoicePage() {
         toast({ title: 'Empty Invoice', description: 'Add items to the invoice before finalizing.', variant: 'destructive' });
         throw new Error("Empty invoice");
       }
+      if (!buyerName.trim()) {
+        toast({ title: 'Buyer Name Required', description: 'Please enter the buyer\'s name.', variant: 'destructive' });
+        throw new Error("Buyer name required");
+      }
+      if (!buyerPhoneNumber.trim()) {
+        toast({ title: 'Buyer Phone Required', description: 'Please enter the buyer\'s phone number.', variant: 'destructive' });
+        throw new Error("Buyer phone number required");
+      }
       if (!city.trim()) {
         toast({ title: 'City Required', description: 'Please enter the city name for the franchise invoice.', variant: 'destructive' });
         throw new Error("City name required");
@@ -161,19 +170,20 @@ export default function FranchiseInvoicePage() {
       }
 
       const orderNumber = await dataStore.generateNextOrderNumber('franchise');
-      const newOrderData: Omit<Order, 'id'> = { 
+      const newOrderData: Omit<Order, 'id'> = {
         orderNumber,
         items: currentOrderItems,
         totalAmount,
-        createdAt: new Date(), 
-        type: 'franchise', // Crucial: set type to 'franchise'
+        createdAt: new Date(),
+        type: 'franchise',
+        buyerName: buyerName.trim(),
+        buyerPhoneNumber: buyerPhoneNumber.trim(),
         city: city.trim(),
         paymentMethod: paymentMethod,
       };
-      
-      // Update Godown Product Quantities
+
       for (const item of currentOrderItems) {
-        const godownProduct = await dataStore.getGodownProductById(item.productId); 
+        const godownProduct = await dataStore.getGodownProductById(item.productId);
         if (!godownProduct) {
           toast({
             title: 'Product Not Found During Finalization',
@@ -192,21 +202,22 @@ export default function FranchiseInvoicePage() {
         }
         await dataStore.updateGodownProduct(item.productId, { quantity: godownProduct.quantity - item.quantity });
       }
-      
-      // Add order to the 'franchiseInvoices' collection (handled by addOrder based on type)
-      const createdOrder = await dataStore.addOrder(newOrderData); 
-      return createdOrder; 
+
+      const createdOrder = await dataStore.addOrder(newOrderData);
+      return createdOrder;
     },
     onSuccess: (createdOrder) => {
-      queryClient.invalidateQueries({ queryKey: ['godownProducts'] }); 
+      queryClient.invalidateQueries({ queryKey: ['godownProducts'] });
       queryClient.invalidateQueries({ queryKey: ['franchiseBillingGodownProducts'] });
-      queryClient.invalidateQueries({ queryKey: ['franchiseInvoices'] }); // Specific key for franchise invoices
+      queryClient.invalidateQueries({ queryKey: ['franchiseInvoices'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardData'] });
-      toast({ title: 'Franchise Invoice Placed!', description: `Invoice ${createdOrder.orderNumber} finalized for ${createdOrder.city}. Total: ₹${createdOrder.totalAmount.toFixed(2)}`, className: "bg-primary text-primary-foreground" });
+      toast({ title: 'Franchise Invoice Placed!', description: `Invoice ${createdOrder.orderNumber} finalized for ${createdOrder.buyerName}, ${createdOrder.city}. Total: ₹${createdOrder.totalAmount.toFixed(2)}`, className: "bg-primary text-primary-foreground" });
       setCurrentOrderItems([]);
+      setBuyerName('');
+      setBuyerPhoneNumber('');
       setCity('');
-      setPaymentMethod('cash'); // Reset payment method
-      setLatestFranchiseOrder(createdOrder); 
+      setPaymentMethod('cash');
+      setLatestFranchiseOrder(createdOrder);
     },
     onError: (error: Error) => {
       const title = 'Invoice Failed';
@@ -217,7 +228,7 @@ export default function FranchiseInvoicePage() {
       if (isIndexError) {
         const fullLinkRegex = /https:\/\/console\.firebase\.google\.com\/project\/[^/]+\/database\/firestore\/indexes\?create_composite=[^)\s]+/;
         let createIndexLink = error.message.match(fullLinkRegex)?.[0] || null;
-        
+
         const collectionNameMatch = error.message.match(/collection:\s*(\w+)/i);
         const collectionName = collectionNameMatch ? collectionNameMatch[1] : 'your collection';
 
@@ -232,7 +243,7 @@ export default function FranchiseInvoicePage() {
             }
           }
         }
-        
+
         description = `A database operation failed because a required Firestore index is missing for the '${collectionName}' collection. `;
         if (createIndexLink) {
           description += `Please use this link to create it: ${createIndexLink}. `;
@@ -242,7 +253,7 @@ export default function FranchiseInvoicePage() {
         }
         description += " It may take a few minutes for the index to become active after creation.";
         toast({ title, description, variant: 'destructive', duration: 20000 });
-      } else if (error.message.includes('Insufficient stock') || error.message.includes('not found during finalization') || error.message.includes('Empty invoice') || error.message.includes('City name required') || error.message.includes('Payment method required')) {
+      } else if (error.message.includes('Insufficient stock') || error.message.includes('not found during finalization') || error.message.includes('Empty invoice') || error.message.includes('Buyer name required') || error.message.includes('Buyer phone number required') || error.message.includes('City name required') || error.message.includes('Payment method required')) {
          toast({ title, description: error.message, variant: 'destructive' });
       } else {
         toast({ title, description: `An unexpected error occurred: ${error.message}`, variant: 'destructive' });
@@ -251,37 +262,73 @@ export default function FranchiseInvoicePage() {
   });
 
   useEffect(() => {
-    if(latestFranchiseOrder && printRef.current) { 
+    if(latestFranchiseOrder && printRef.current) {
         handleDirectPrint();
     }
   }, [latestFranchiseOrder, handleDirectPrint]);
 
+  const isBuyerNameMissing = !buyerName.trim() && finalizeOrderMutation.isError && finalizeOrderMutation.error?.message.includes('Buyer name required');
+  const isBuyerPhoneMissing = !buyerPhoneNumber.trim() && finalizeOrderMutation.isError && finalizeOrderMutation.error?.message.includes('Buyer phone number required');
+  const isCityMissing = !city.trim() && finalizeOrderMutation.isError && finalizeOrderMutation.error?.message.includes('City name required');
+
 
   return (
     <div className="space-y-6 p-6">
-      <h1 className="text-3xl font-bold tracking-tight text-primary">Create Franchise Invoice</h1>
+      <h1 className="text-3xl font-bold tracking-tight text-primary franchise-invoice-page-title">Create Franchise Invoice</h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 franchise-invoice-form-area">
         <div className="lg:col-span-1 space-y-4">
            <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Building className="h-5 w-5" /> Franchise Details</CardTitle>
+              <CardTitle className="flex items-center gap-2"><User className="h-5 w-5" /> Buyer &amp; Destination Details</CardTitle>
             </CardHeader>
-            <CardContent>
-                <div className="space-y-2">
-                    <Label htmlFor="city" className={cn(!city.trim() && finalizeOrderMutation.isError && finalizeOrderMutation.error?.message.includes('City name required') ? "text-destructive" : "")}>
+            <CardContent className="space-y-4">
+                <div>
+                    <Label htmlFor="buyerName" className={cn(isBuyerNameMissing ? "text-destructive" : "")}>
+                        Buyer Name <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                        id="buyerName"
+                        type="text"
+                        placeholder="Enter buyer's full name"
+                        value={buyerName}
+                        onChange={(e) => setBuyerName(e.target.value)}
+                        className={cn(isBuyerNameMissing ? "border-destructive" : "")}
+                    />
+                     {isBuyerNameMissing && (
+                        <p className="text-xs text-destructive mt-1">Buyer name is required.</p>
+                     )}
+                </div>
+                 <div>
+                    <Label htmlFor="buyerPhoneNumber" className={cn(isBuyerPhoneMissing ? "text-destructive" : "")}>
+                        Buyer Phone Number <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                        id="buyerPhoneNumber"
+                        type="tel"
+                        placeholder="Enter buyer's phone number"
+                        value={buyerPhoneNumber}
+                        onChange={(e) => setBuyerPhoneNumber(e.target.value)}
+                        className={cn(isBuyerPhoneMissing ? "border-destructive" : "")}
+                    />
+                     {isBuyerPhoneMissing && (
+                        <p className="text-xs text-destructive mt-1">Buyer phone number is required.</p>
+                     )}
+                </div>
+                <div>
+                    <Label htmlFor="city" className={cn(isCityMissing ? "text-destructive" : "")}>
                         City Name <span className="text-destructive">*</span>
                     </Label>
-                    <Input 
+                    <Input
                         id="city"
                         type="text"
                         placeholder="Enter city name"
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
-                        className={cn(!city.trim() && finalizeOrderMutation.isError && finalizeOrderMutation.error?.message.includes('City name required') ? "border-destructive" : "")}
+                        className={cn(isCityMissing ? "border-destructive" : "")}
                     />
-                     {!city.trim() && finalizeOrderMutation.isError && finalizeOrderMutation.error?.message.includes('City name required') && (
-                        <p className="text-xs text-destructive">City name is required to finalize the invoice.</p>
+                     {isCityMissing && (
+                        <p className="text-xs text-destructive mt-1">City name is required.</p>
                      )}
                 </div>
             </CardContent>
@@ -320,7 +367,7 @@ export default function FranchiseInvoicePage() {
                )}
             </CardContent>
           </Card>
-          
+
         </div>
 
         <div className="lg:col-span-2 space-y-4">
@@ -377,7 +424,7 @@ export default function FranchiseInvoicePage() {
               )}
             </CardContent>
             {currentOrderItems.length > 0 && (
-              <CardFooter className="flex flex-col sm:flex-row justify-between items-center border-t pt-4 gap-4">
+              <CardFooter className="flex flex-col sm:flex-row justify-between items-center border-t pt-4 gap-4 franchise-bill-actions-footer">
                  <div className="w-full sm:w-auto">
                   <Label className="text-sm font-medium mb-2 block">Payment Method</Label>
                   <RadioGroup
@@ -399,8 +446,8 @@ export default function FranchiseInvoicePage() {
                   <div className="text-xl font-bold text-primary self-center sm:self-end">
                     Total: ₹{totalAmount.toFixed(2)}
                   </div>
-                  <Button 
-                      onClick={() => finalizeOrderMutation.mutate()} 
+                  <Button
+                      onClick={() => finalizeOrderMutation.mutate()}
                       disabled={finalizeOrderMutation.isPending}
                       className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
                       size="lg"
@@ -411,7 +458,7 @@ export default function FranchiseInvoicePage() {
                       </>
                     ) : (
                       <>
-                          <CheckCircle className="mr-2 h-5 w-5" /> Finalize & Print Invoice
+                          <CheckCircle className="mr-2 h-5 w-5" /> Finalize &amp; Print Invoice
                       </>
                     )}
                   </Button>
@@ -423,7 +470,7 @@ export default function FranchiseInvoicePage() {
       </div>
 
       {latestFranchiseOrder && (
-          <div ref={billWrapperRef} className="hidden"> 
+          <div ref={billWrapperRef} className="hidden">
             <PrintableFranchiseBill ref={printRef} order={latestFranchiseOrder} />
           </div>
       )}
@@ -444,12 +491,15 @@ const PrintableFranchiseBill = React.forwardRef<HTMLDivElement, PrintableFranchi
         {`
           @media print {
             body.body-is-printing {
-              background-color: white !important; 
+              background-color: white !important;
             }
-            body.body-is-printing header, 
-            body.body-is-printing aside, 
-            body.body-is-printing div[data-sidebar="sidebar"], 
-            body.body-is-printing .ToastViewport {
+            body.body-is-printing header,
+            body.body-is-printing aside,
+            body.body-is-printing div[data-sidebar="sidebar"],
+            body.body-is-printing .ToastViewport,
+            body.body-is-printing .franchise-invoice-page-title, /* Hides H1 title */
+            body.body-is-printing .franchise-invoice-form-area, /* Hides main form grid */
+            body.body-is-printing .franchise-bill-actions-footer /* Hides the specific CardFooter with the button */ {
               display: none !important;
               visibility: hidden !important;
             }
@@ -470,7 +520,7 @@ const PrintableFranchiseBill = React.forwardRef<HTMLDivElement, PrintableFranchi
             .print-bill-wrapper-active > .printable-bill-actual-content {
               display: block !important;
               visibility: visible !important;
-              margin: 15mm !important; 
+              margin: 15mm !important;
               padding: 0 !important;
               background-color: white !important;
               color: black !important;
@@ -488,16 +538,22 @@ const PrintableFranchiseBill = React.forwardRef<HTMLDivElement, PrintableFranchi
                 background-color: transparent !important;
                 visibility: visible !important;
             }
-            @page { 
-              size: A4; 
-              margin: 0; 
+            @page {
+              size: A4;
+              margin: 0;
             }
             .print-bill-wrapper-active .print-container { width: 100%; margin: 0 auto; }
-            .print-bill-wrapper-active .header { text-align: center; margin-bottom: 15px; }
+            .print-bill-wrapper-active .header { text-align: center; margin-bottom: 10px; }
             .print-bill-wrapper-active .shop-name { font-size: 1.8em; font-weight: bold; color: #1a1a1a !important; margin-bottom: 3px; }
             .print-bill-wrapper-active .address-info { font-size: 0.9em; color: #404040 !important; margin-bottom: 3px; line-height: 1.3; }
             .print-bill-wrapper-active .contact-info { font-size: 0.9em; color: #404040 !important; margin-bottom: 3px; }
-            .print-bill-wrapper-active .gstin-info { font-size: 0.9em; font-weight: bold; color: #303030 !important; margin-bottom: 10px; }
+            .print-bill-wrapper-active .gstin-info { font-size: 0.9em; font-weight: bold; color: #303030 !important; margin-bottom: 8px; }
+
+            .print-bill-wrapper-active .buyer-details-section { margin-bottom: 10px; padding: 8px; border: 1px solid #bbb !important; background-color: #f7f7f7 !important; border-radius: 4px; }
+            .print-bill-wrapper-active .buyer-details-section h3 { margin-top:0; margin-bottom: 6px; font-size: 1.0em; color: #222 !important; border-bottom: 1px solid #ddd !important; padding-bottom: 3px; font-weight: bold; }
+            .print-bill-wrapper-active .buyer-details-section p { margin: 2px 0; font-size: 0.9em; line-height: 1.3; }
+            .print-bill-wrapper-active .buyer-details-section strong { color: #1a1a1a !important; }
+
             .print-bill-wrapper-active .order-details { margin-bottom: 15px; padding-bottom: 8px; border-bottom: 1px dashed #ccc !important; }
             .print-bill-wrapper-active .order-details p { margin: 3px 0; font-size: 0.95em; }
             .print-bill-wrapper-active .order-details strong { color: #1a1a1a !important; }
@@ -511,8 +567,8 @@ const PrintableFranchiseBill = React.forwardRef<HTMLDivElement, PrintableFranchi
             .print-bill-wrapper-active .total-section .grand-total { font-size: 1.3em; color: #1a1a1a !important; }
             .print-bill-wrapper-active .footer { text-align: center; margin-top: 25px; padding-top: 12px; border-top: 1px solid #eee !important; font-size: 0.85em; color: #505050 !important; }
             .print-bill-wrapper-active .barcode-section { text-align: center; margin-top: 15px; }
-            body.body-is-printing * { 
-              -webkit-print-color-adjust: exact !important; 
+            body.body-is-printing * {
+              -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }
           }
@@ -522,9 +578,15 @@ const PrintableFranchiseBill = React.forwardRef<HTMLDivElement, PrintableFranchi
         <div className="header">
           <div className="shop-name">{FRANCHISE_SHOP_NAME}</div>
           <div className="address-info">{FRANCHISE_ADDRESS}</div>
-          <div className="address-info">{order.city}, {FRANCHISE_STATE}</div>
           <div className="contact-info">Contact: {FRANCHISE_CONTACT_NUMBERS.join(' / ')}</div>
           <div className="gstin-info">GSTIN: {FRANCHISE_GSTIN}</div>
+        </div>
+
+        <div className="buyer-details-section">
+            <h3>Bill To:</h3>
+            <p><strong>Name:</strong> {order.buyerName}</p>
+            <p><strong>Phone:</strong> {order.buyerPhoneNumber}</p>
+            <p><strong>City:</strong> {order.city}, {FRANCHISE_STATE}</p>
         </div>
 
         <div className="order-details">
@@ -559,7 +621,7 @@ const PrintableFranchiseBill = React.forwardRef<HTMLDivElement, PrintableFranchi
         <div className="total-section">
           <p className="grand-total">Total Amount: ₹{order.totalAmount.toFixed(2)}</p>
         </div>
-        
+
         <div className="barcode-section">
             <p className="text-xs mb-1">Invoice ID:</p>
             <BarcodeDisplay value={order.orderNumber} />
@@ -574,8 +636,4 @@ const PrintableFranchiseBill = React.forwardRef<HTMLDivElement, PrintableFranchi
   );
 });
 PrintableFranchiseBill.displayName = 'PrintableFranchiseBill';
-
-
-
-
 

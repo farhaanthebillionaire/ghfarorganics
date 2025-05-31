@@ -41,6 +41,9 @@ export interface Order {
   buyerName?: string; // Buyer's name for franchise invoices
   buyerPhoneNumber?: string; // Buyer's phone number for franchise invoices
   paymentMethod?: PaymentMethod; // Payment method used
+
+  customerName?: string; // Optional
+  customerPhone?: string; // Optional
 }
 
 export interface FranchiseDetails {
@@ -87,4 +90,3 @@ export interface ReportData {
   paymentMethodCounts: PaymentMethodBreakdown;
   paymentMethodTrends: PaymentMethodTrendData[];
 }
-

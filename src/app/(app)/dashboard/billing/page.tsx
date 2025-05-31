@@ -23,9 +23,12 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import * as dataStore from '@/lib/data-store';
 
 const fetchProductsForBilling = async (searchTerm: string = ''): Promise<Product[]> => {
-  let filters: any = { orderBy: 'name', orderDirection: 'asc', limit: 10 };
+  let filters: any = { orderBy: 'name', orderDirection: 'asc' };
   if (searchTerm) {
-    filters.name = searchTerm; 
+    filters.name = searchTerm;
+    // No limit when searching, so dataStore.getProducts fetches all matching products
+  } else {
+    filters.limit = 10; // Keep limit for initial/empty search to show some products
   }
   const products = await dataStore.getProducts(filters);
   return products;
@@ -54,7 +57,7 @@ export default function BillingPage() {
   const printRef = useRef<HTMLDivElement>(null); 
   const billWrapperRef = useRef<HTMLDivElement>(null); 
 
-  const { data: searchResults = [] } = useQuery<Product[]>({
+  const { data: searchResults = [], isLoading: searchLoading } = useQuery<Product[]>({
     queryKey: ['billingProducts', searchTerm],
     queryFn: () => fetchProductsForBilling(searchTerm),
     enabled: searchTerm.length > 0 && showSearchResults,
@@ -292,7 +295,7 @@ export default function BillingPage() {
 
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <h1 className="text-3xl font-bold tracking-tight text-primary">Create New Bill</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -310,7 +313,10 @@ export default function BillingPage() {
                 onFocus={() => searchTerm && setShowSearchResults(true)}
                 className="mb-2"
               />
-              {showSearchResults && searchResults.length > 0 && (
+              {showSearchResults && searchLoading && searchTerm.length > 0 && (
+                 <div className="p-2 text-sm text-muted-foreground flex items-center"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Searching...</div>
+              )}
+              {showSearchResults && !searchLoading && searchResults.length > 0 && (
                 <ScrollArea className="h-[200px] border rounded-md">
                   {searchResults.map(product => (
                     <div
@@ -326,7 +332,7 @@ export default function BillingPage() {
                   ))}
                 </ScrollArea>
               )}
-               {showSearchResults && searchTerm && searchResults.length === 0 && (
+               {showSearchResults && !searchLoading && searchTerm && searchResults.length === 0 && (
                  <p className="text-sm text-muted-foreground p-2">No products found matching "{searchTerm}".</p>
                )}
             </CardContent>
@@ -618,5 +624,8 @@ const PrintableBill = React.forwardRef<HTMLDivElement, PrintableBillProps>(({ or
   );
 });
 PrintableBill.displayName = 'PrintableBill';
+
+
+
 
 

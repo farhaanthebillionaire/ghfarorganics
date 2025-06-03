@@ -538,7 +538,7 @@ export default function InventoryPage() {
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-primary flex items-center">
           <PackageOpen className="mr-2 md:mr-3 h-7 w-7 md:h-8 md:w-8" />
-          Inventory Management
+          A.R Organics
         </h1>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
           <div className="relative flex-grow sm:flex-grow-0">

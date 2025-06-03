@@ -26,9 +26,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = () => {
-    // Remove the 'expires' option to make it a session cookie
-    // Session cookies are deleted when the browser session ends (e.g., browser is closed)
-    Cookies.set(AUTH_TOKEN_COOKIE_NAME, 'true', { path: '/' });
+    // Set a persistent cookie that expires in 30 days
+    Cookies.set(AUTH_TOKEN_COOKIE_NAME, 'true', { path: '/', expires: 30 });
     setIsAuthenticated(true);
   };
 

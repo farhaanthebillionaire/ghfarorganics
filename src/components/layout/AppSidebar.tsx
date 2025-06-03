@@ -33,7 +33,7 @@ import Image from 'next/image';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: Home },
-  { href: '/dashboard/inventory', label: 'Inventory', icon: Archive },
+  { href: '/dashboard/inventory', label: 'A.R organics', icon: Archive },
   { href: '/dashboard/godown', label: 'Godown Stock', icon: Warehouse }, 
   { href: '/dashboard/billing', label: 'Billing', icon: ShoppingCart },
   { href: '/dashboard/franchise-invoice', label: 'Franchise Invoice', icon: Receipt },
